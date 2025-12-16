@@ -1,4 +1,4 @@
-module github.com/zekker6/mcp-helm
+module github.com/Kubedoll-Heavy-Industries/mcp-helm
 
 go 1.25.0
 

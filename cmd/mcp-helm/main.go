@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/zekker6/mcp-helm/internal/tools"
-	"github.com/zekker6/mcp-helm/lib/helm_client"
-	"github.com/zekker6/mcp-helm/lib/logger"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/tools"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/logger"
 	"go.uber.org/zap"
 )
 

@@ -17,7 +17,7 @@ import (
 	"helm.sh/helm/v4/pkg/getter"
 	"helm.sh/helm/v4/pkg/repo/v1"
 
-	"github.com/zekker6/mcp-helm/lib/helm_parser"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_parser"
 )
 
 var (

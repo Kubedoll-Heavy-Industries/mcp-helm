@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	testRepoURL   = "https://zekker6.github.io/helm-charts"
+	testRepoURL   = "https://Kubedoll-Heavy-Industries.github.io/helm-charts"
 	testChartName = "readeck"
 )
 

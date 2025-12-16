@@ -1,6 +1,6 @@
 {
   "extends": [
-    "github>zekker6/renovate-config",
-    "github>zekker6/renovate-config:automerge-github-actions"
+    "github>Kubedoll-Heavy-Industries/renovate-config",
+    "github>Kubedoll-Heavy-Industries/renovate-config:automerge-github-actions"
   ]
 }

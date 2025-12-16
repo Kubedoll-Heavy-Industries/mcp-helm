@@ -7,7 +7,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/zekker6/mcp-helm/lib/helm_client"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
 )
 
 func NewGetLatestVersionOfChartTool() mcp.Tool {

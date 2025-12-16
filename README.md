@@ -35,7 +35,7 @@ You can run the MCP Helm server using Docker. This is the easiest way to get sta
 build from source.
 
 ```bash
-docker run -d --name mcp-helm -p 8012:8012 ghcr.io/zekker6/mcp-helm:v1.0.6 -mode=sse
+docker run -d --name mcp-helm -p 8012:8012 ghcr.io/Kubedoll-Heavy-Industries/mcp-helm:v1.0.6 -mode=sse
 ```
 
 Note that the `--mode=sse` flag is used to enable Server-Sent Events mode, which used by MCP clients to connect.
@@ -43,13 +43,13 @@ Alternatively, you can use `-mode=http` to enable Streamable HTTP mode.
 
 ### Via pre-build binary
 
-Download binary from the [releases page](https://github.com/zekker6/mcp-helm/releases).
+Download binary from the [releases page](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases).
 
 Example for Linux x86_64 (note that other architectures and platforms are also available):
 
 ```bash
-latest=$(curl -s https://api.github.com/repos/zekker6/mcp-helm/releases/latest | grep 'tag_name' | cut -d\" -f4)
-wget https://github.com/zekker6/mcp-helm/releases/download/$latest/mcp-helm_Linux_x86_64.tar.gz
+latest=$(curl -s https://api.github.com/repos/Kubedoll-Heavy-Industries/mcp-helm/releases/latest | grep 'tag_name' | cut -d\" -f4)
+wget https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases/download/$latest/mcp-helm_Linux_x86_64.tar.gz
 tar axvf mcp-helm_Linux_x86_64.tar.gz
 ```
 
@@ -58,7 +58,7 @@ tar axvf mcp-helm_Linux_x86_64.tar.gz
 Mise ([mise-en-place](https://mise.jdx.dev/)) is a development environment setup tool.
 
 ```bash
-mise i ubi:zekker6/mcp-helm@latest
+mise i ubi:Kubedoll-Heavy-Industries/mcp-helm@latest
 ```
 
 ### Install with Go
@@ -66,7 +66,7 @@ mise i ubi:zekker6/mcp-helm@latest
 > Note: Go 1.24.3 is required.
 
 ```bash
-go install github.com/zekker6/mcp-helm/cmd/mcp-helm@latest
+go install github.com/Kubedoll-Heavy-Industries/mcp-helm/cmd/mcp-helm@latest
 ```
 
 ### Build from Source
@@ -75,7 +75,7 @@ go install github.com/zekker6/mcp-helm/cmd/mcp-helm@latest
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/zekker6/mcp-helm.git
+   git clone https://github.com/Kubedoll-Heavy-Industries/mcp-helm.git
    cd mcp-helm
    ```
 
