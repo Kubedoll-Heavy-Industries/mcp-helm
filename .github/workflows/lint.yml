@@ -20,12 +20,14 @@ jobs:
 
       - name: Install mise
         uses: jdx/mise-action@v3
+        with:
+          install: true
 
       - name: Run lint
-        run: task lint
+        run: mise run lint
 
       - name: Run test
-        run: task test
+        run: mise run test
 
       - name: Run build
-        run: task build
+        run: mise run build
