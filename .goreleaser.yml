@@ -45,7 +45,7 @@ changelog:
 
 dockers_v2:
   - images:
-      - ghcr.io/Kubedoll-Heavy-Industries/mcp-helm
+      - ghcr.io/kubedoll-heavy-industries/mcp-helm
     tags:
       - latest
       - "{{ .Tag }}"

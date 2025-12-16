@@ -35,7 +35,7 @@ You can run the MCP Helm server using Docker. This is the easiest way to get sta
 build from source.
 
 ```bash
-docker run -d --name mcp-helm -p 8012:8012 ghcr.io/Kubedoll-Heavy-Industries/mcp-helm:latest
+docker run -d --name mcp-helm -p 8012:8012 ghcr.io/kubedoll-heavy-industries/mcp-helm:latest
 ```
 
 The container defaults to Streamable HTTP mode on port 8012. Connect to `http://localhost:8012/mcp`.
