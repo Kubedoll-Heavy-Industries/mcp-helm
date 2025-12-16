@@ -4,6 +4,18 @@ on:
   push:
     branches:
       - main
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      run_goreleaser:
+        description: 'Run goreleaser manually'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -11,21 +23,17 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Release Please
-        id: release
         uses: googleapis/release-please-action@v4
         with:
           release-type: go
           token: ${{ secrets.GITHUB_TOKEN }}
 
   goreleaser:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.run_goreleaser)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,6 +48,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.25"
+          cache: true
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
