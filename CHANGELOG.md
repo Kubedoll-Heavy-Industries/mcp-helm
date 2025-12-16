@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/compare/v1.0.0...v1.0.0) (2025-12-16)
+
+
+### Miscellaneous Chores
+
+* initial release ([acdf9cb](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/commit/acdf9cb39cfb8d605b797b9663c4097eee917682))
+
 ## 1.0.0 (2025-12-16)
 
 
