@@ -2,47 +2,38 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
 )
 
-func NewGetLatestVersionOfChartTool() mcp.Tool {
-	return mcp.NewTool("get_latest_version_of_chart",
-		mcp.WithDescription("Retrieves the latest version of the chart"),
-		mcp.WithString("repository_url",
-			mcp.Required(),
-			mcp.Description("Helm repository URL"),
-		),
-		mcp.WithString("chart_name",
-			mcp.Required(),
-			mcp.Description("Chart name"),
-		),
-	)
+type getLatestVersionOfChartInput struct {
+	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
+	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
 }
 
-func GetLatestVersionOfCharHandler(c *helm_client.HelmClient) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		repositoryURL, err := request.RequireString("repository_url")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		repositoryURL = strings.TrimSpace(repositoryURL)
+type getLatestVersionOfChartOutput struct {
+	Version string `json:"version" jsonschema:"Latest chart version"`
+}
 
-		chartName, err := request.RequireString("chart_name")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+func newGetLatestVersionOfChartHandler(c *helm_client.HelmClient) mcp.ToolHandlerFor[getLatestVersionOfChartInput, getLatestVersionOfChartOutput] {
+	return func(_ context.Context, _ *mcp.CallToolRequest, in getLatestVersionOfChartInput) (*mcp.CallToolResult, getLatestVersionOfChartOutput, error) {
+		repositoryURL := strings.TrimSpace(in.RepositoryURL)
+		if repositoryURL == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "repository_url is required"}}}, getLatestVersionOfChartOutput{}, nil
 		}
-		chartName = strings.TrimSpace(chartName)
+		chartName := strings.TrimSpace(in.ChartName)
+		if chartName == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "chart_name is required"}}}, getLatestVersionOfChartOutput{}, nil
+		}
 
 		version, err := c.GetChartLatestVersion(repositoryURL, chartName)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list charts: %v", err)), nil
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "failed to get latest version: " + err.Error()}}}, getLatestVersionOfChartOutput{}, nil
 		}
 
-		return mcp.NewToolResultText(version), nil
+		return nil, getLatestVersionOfChartOutput{Version: version}, nil
 	}
 }

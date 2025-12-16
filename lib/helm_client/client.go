@@ -1,14 +1,18 @@
 package helm_client
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"helm.sh/helm/v4/pkg/chart/loader"
 	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
@@ -27,22 +31,228 @@ var (
 type HelmClient struct {
 	settings *cli.EnvSettings
 
+	timeout            time.Duration
+	allowPrivateIPs    bool
+	allowedHosts       []string
+	deniedHosts        []string
+	maxToolOutputBytes int
+
 	reposMu sync.Mutex
 	repos   map[string]*repo.ChartRepository
 }
 
+type Options struct {
+	Timeout            time.Duration
+	AllowPrivateIPs    bool
+	AllowedHosts       []string
+	DeniedHosts        []string
+	MaxToolOutputBytes int
+}
+
+type ChartVersionMetadata struct {
+	Version    string
+	AppVersion string
+	Created    string
+	Deprecated bool
+}
+
 func NewClient() *HelmClient {
+	return NewClientWithOptions(Options{
+		Timeout:            30 * time.Second,
+		AllowPrivateIPs:    false,
+		AllowedHosts:       nil,
+		DeniedHosts:        nil,
+		MaxToolOutputBytes: 2 * 1024 * 1024,
+	})
+}
+
+func NewClientWithOptions(opts Options) *HelmClient {
 	settings := cli.New()
 	settings.RepositoryCache = path.Join(tmpDir, "helm-cache")
 	settings.RegistryConfig = path.Join(tmpDir, "helm-registry.conf")
 	settings.RepositoryConfig = path.Join(tmpDir, "helm-repository.conf")
 
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
 	return &HelmClient{
 		settings: settings,
+		timeout:  timeout,
+
+		allowPrivateIPs:    opts.AllowPrivateIPs,
+		allowedHosts:       normalizeHosts(opts.AllowedHosts),
+		deniedHosts:        normalizeHosts(opts.DeniedHosts),
+		maxToolOutputBytes: opts.MaxToolOutputBytes,
 	}
 }
 
-func (c *HelmClient) getRepo(name, url string) (*repo.ChartRepository, error) {
+func normalizeHosts(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		vv := strings.ToLower(strings.TrimSpace(v))
+		if vv == "" {
+			continue
+		}
+		out = append(out, vv)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func hostMatchesList(host string, patterns []string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+
+	for _, p := range patterns {
+		pp := strings.ToLower(strings.TrimSpace(p))
+		if pp == "" {
+			continue
+		}
+		if pp == "*" {
+			return true
+		}
+		if strings.HasPrefix(pp, ".") {
+			if host == strings.TrimPrefix(pp, ".") || strings.HasSuffix(host, pp) {
+				return true
+			}
+			continue
+		}
+		if host == pp || strings.HasSuffix(host, "."+pp) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isDisallowedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	if ip.IsMulticast() {
+		return true
+	}
+	return false
+}
+
+func (c *HelmClient) validateRepositoryURL(raw string) (string, error) {
+	repoURL := strings.TrimSpace(raw)
+	if repoURL == "" {
+		return "", fmt.Errorf("repository URL is empty")
+	}
+
+	u, err := url.Parse(repoURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid repository URL: %v", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported repository URL scheme: %s", u.Scheme)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("repository URL must not contain userinfo")
+	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("repository URL must include a host")
+	}
+	if u.Fragment != "" {
+		return "", fmt.Errorf("repository URL must not contain a fragment")
+	}
+	if u.RawQuery != "" {
+		return "", fmt.Errorf("repository URL must not contain a query")
+	}
+
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return "", fmt.Errorf("repository URL host is not allowed")
+	}
+	if hostMatchesList(host, c.deniedHosts) {
+		return "", fmt.Errorf("repository URL host is denied")
+	}
+	if len(c.allowedHosts) > 0 && !hostMatchesList(host, c.allowedHosts) {
+		return "", fmt.Errorf("repository URL host is not in allowlist")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve repository host: %v", err)
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("repository host resolved to no addresses")
+	}
+	if !c.allowPrivateIPs {
+		for _, a := range addrs {
+			if isDisallowedIP(a.IP) {
+				return "", fmt.Errorf("repository host resolves to a non-public IP")
+			}
+		}
+	}
+
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	return u.String(), nil
+}
+
+func (c *HelmClient) validateFetchURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %v", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("URL must not contain userinfo")
+	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("URL must include a host")
+	}
+
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return "", fmt.Errorf("URL host is not allowed")
+	}
+	if hostMatchesList(host, c.deniedHosts) {
+		return "", fmt.Errorf("URL host is denied")
+	}
+	if len(c.allowedHosts) > 0 && !hostMatchesList(host, c.allowedHosts) {
+		return "", fmt.Errorf("URL host is not in allowlist")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve host: %v", err)
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("host resolved to no addresses")
+	}
+	if !c.allowPrivateIPs {
+		for _, a := range addrs {
+			if isDisallowedIP(a.IP) {
+				return "", fmt.Errorf("host resolves to a non-public IP")
+			}
+		}
+	}
+
+	return u.String(), nil
+}
+
+func (c *HelmClient) getRepo(repoURL string) (*repo.ChartRepository, error) {
 	c.reposMu.Lock()
 	defer c.reposMu.Unlock()
 
@@ -50,15 +260,20 @@ func (c *HelmClient) getRepo(name, url string) (*repo.ChartRepository, error) {
 		c.repos = make(map[string]*repo.ChartRepository)
 	}
 
+	validatedRepoURL, err := c.validateRepositoryURL(repoURL)
+	if err != nil {
+		return nil, err
+	}
+
 	// todo: refresh index periodically based on last update time or a fixed interval
-	if v, exists := c.repos[name]; exists {
+	if v, exists := c.repos[validatedRepoURL]; exists {
 		return v, nil
 	}
 
 	requestedRepo, err := repo.NewChartRepository(&repo.Entry{
-		Name: name,
-		URL:  url,
-	}, getter.All(c.settings))
+		Name: validatedRepoURL,
+		URL:  validatedRepoURL,
+	}, getter.All(c.settings, getter.WithTimeout(c.timeout)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chartv2 repository: %v", err)
 	}
@@ -75,14 +290,14 @@ func (c *HelmClient) getRepo(name, url string) (*repo.ChartRepository, error) {
 	requestedRepo.IndexFile = file
 	requestedRepo.IndexFile.SortEntries()
 
-	c.repos[name] = requestedRepo
+	c.repos[validatedRepoURL] = requestedRepo
 	return requestedRepo, nil
 }
 
 func (c *HelmClient) ListCharts(repoURL string) ([]string, error) {
 	// todo: sanitize repoURL url to create a name
 
-	helmRepo, err := c.getRepo(repoURL, repoURL)
+	helmRepo, err := c.getRepo(repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add repository: %v", err)
 	}
@@ -107,7 +322,7 @@ func (c *HelmClient) ListCharts(repoURL string) ([]string, error) {
 }
 
 func (c *HelmClient) ListChartVersions(repoURL string, chart string) ([]string, error) {
-	helmRepo, err := c.getRepo(repoURL, repoURL)
+	helmRepo, err := c.getRepo(repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add repository: %v", err)
 	}
@@ -127,6 +342,39 @@ func (c *HelmClient) ListChartVersions(repoURL string, chart string) ([]string, 
 	return versions, nil
 }
 
+func (c *HelmClient) ListChartVersionsWithMetadata(repoURL string, chart string) ([]ChartVersionMetadata, error) {
+	helmRepo, err := c.getRepo(repoURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add repository: %v", err)
+	}
+
+	chartVersions, ok := helmRepo.IndexFile.Entries[chart]
+	if !ok {
+		return nil, fmt.Errorf("chart %s not found in repository %s", chart, repoURL)
+	}
+
+	versions := make([]ChartVersionMetadata, 0, len(chartVersions))
+	for _, ver := range chartVersions {
+		if ver == nil || ver.Metadata == nil {
+			continue
+		}
+
+		created := ""
+		if !ver.Created.IsZero() {
+			created = ver.Created.UTC().Format("2006-01-02T15:04:05Z")
+		}
+
+		versions = append(versions, ChartVersionMetadata{
+			Version:    ver.Version,
+			AppVersion: ver.AppVersion,
+			Created:    created,
+			Deprecated: ver.Deprecated,
+		})
+	}
+
+	return versions, nil
+}
+
 func (c *HelmClient) GetChartValues(repoURL, chartName, version string) (string, error) {
 	loadedChart, err := c.loadChart(repoURL, chartName, version)
 	if err != nil {
@@ -142,7 +390,11 @@ func (c *HelmClient) GetChartValues(repoURL, chartName, version string) (string,
 		break
 	}
 
-	return string(rawContent), nil
+	values := string(rawContent)
+	if c.maxToolOutputBytes > 0 && len(values) > c.maxToolOutputBytes {
+		return "", fmt.Errorf("chart values output exceeds max size limit")
+	}
+	return values, nil
 }
 
 func (c *HelmClient) GetChartContents(repoURL, chartName, version string, recursive bool) (string, error) {
@@ -159,12 +411,15 @@ func (c *HelmClient) GetChartContents(repoURL, chartName, version string, recurs
 	if err != nil {
 		return "", fmt.Errorf("failed to get chartv2 contents for %s version %s: %v", chartName, version, err)
 	}
+	if c.maxToolOutputBytes > 0 && len(contents) > c.maxToolOutputBytes {
+		return "", fmt.Errorf("chart contents output exceeds max size limit")
+	}
 	return contents, nil
 }
 
 func (c *HelmClient) loadChart(repoURL string, chartName string, version string) (*chartv2.Chart, error) {
 	// TODO: implement caching for values file
-	helmRepo, err := c.getRepo(repoURL, repoURL)
+	helmRepo, err := c.getRepo(repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository: %v", err)
 	}
@@ -199,6 +454,11 @@ func (c *HelmClient) loadChart(repoURL string, chartName string, version string)
 		chartURL = fmt.Sprintf("%s/%s", repoBaseURL, strings.TrimPrefix(chartURL, "/"))
 	}
 
+	validatedChartURL, err := c.validateFetchURL(chartURL)
+	if err != nil {
+		return nil, fmt.Errorf("chart download URL is not allowed: %v", err)
+	}
+
 	tempDir, err := os.MkdirTemp("", "helm-chartv2-")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %v", err)
@@ -214,6 +474,7 @@ func (c *HelmClient) loadChart(repoURL string, chartName string, version string)
 		Getters: getter.All(c.settings),
 		Options: []getter.Option{
 			getter.WithURL(helmRepo.Config.URL), // Pass repo URL for context if needed by getters
+			getter.WithTimeout(c.timeout),
 		},
 		RepositoryConfig: c.settings.RepositoryConfig,
 		RepositoryCache:  c.settings.RepositoryCache,
@@ -221,7 +482,7 @@ func (c *HelmClient) loadChart(repoURL string, chartName string, version string)
 		Verify:           downloader.VerifyNever,
 	}
 
-	chartOutputPath, _, err := dl.DownloadTo(chartURL, version, chartPath)
+	chartOutputPath, _, err := dl.DownloadTo(validatedChartURL, version, chartPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download chartv2 %s version %s from %s: %v", chartName, version, chartURL, err)
 	}
@@ -241,7 +502,7 @@ func (c *HelmClient) loadChart(repoURL string, chartName string, version string)
 }
 
 func (c *HelmClient) GetChartLatestVersion(repoURL, chartName string) (string, error) {
-	helmRepo, err := c.getRepo(repoURL, repoURL)
+	helmRepo, err := c.getRepo(repoURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to get repository: %v", err)
 	}
