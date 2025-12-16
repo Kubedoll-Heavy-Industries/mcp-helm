@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/Kubedoll-Heavy-Industries/mcp-helm/security/advisories/new
+    about: Report security vulnerabilities privately via GitHub Security Advisories
+  - name: Questions & Discussions
+    url: https://github.com/Kubedoll-Heavy-Industries/mcp-helm/discussions
+    about: Ask questions or discuss ideas in GitHub Discussions
+  - name: MCP Specification
+    url: https://modelcontextprotocol.io/specification
+    about: Questions about the MCP protocol itself

@@ -1,0 +1,27 @@
+# CODEOWNERS - Defines code review requirements
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: require review from maintainers for all changes
+*                                   @cagyirey
+
+# CI/CD and release infrastructure
+/.github/                           @cagyirey
+/.goreleaser.yml                    @cagyirey
+/docker/                            @cagyirey
+/Dockerfile                         @cagyirey
+/docker-bake.hcl                    @cagyirey
+/.mise.toml                         @cagyirey
+
+# Go module dependencies
+/go.mod                             @cagyirey
+/go.sum                             @cagyirey
+
+# Documentation
+/README.md                          @cagyirey
+/CONTRIBUTING.md                    @cagyirey
+/SECURITY.md                        @cagyirey
+
+# Core MCP server code
+/cmd/                               @cagyirey
+/internal/                          @cagyirey
+/lib/                               @cagyirey
