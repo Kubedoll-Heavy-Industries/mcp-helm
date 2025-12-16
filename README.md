@@ -5,7 +5,7 @@ server enables AI assistants to query Helm repositories, retrieve chart informat
 requiring local Helm installation.
 
 The purpose of using MCP for Helm is to avoid making up format of `values.yaml` and contents of the charts when working
-with LLMs. 
+with LLMs.
 Instead, the server provides a standardized way to access this information, making it easier for AI assistants to
 interact with Helm charts and repositories.
 
@@ -35,11 +35,10 @@ You can run the MCP Helm server using Docker. This is the easiest way to get sta
 build from source.
 
 ```bash
-docker run -d --name mcp-helm -p 8012:8012 ghcr.io/Kubedoll-Heavy-Industries/mcp-helm:v1.0.6 -mode=sse
+docker run -d --name mcp-helm -p 8012:8012 ghcr.io/Kubedoll-Heavy-Industries/mcp-helm:latest
 ```
 
-Note that the `--mode=sse` flag is used to enable Server-Sent Events mode, which used by MCP clients to connect.
-Alternatively, you can use `-mode=http` to enable Streamable HTTP mode.
+The container defaults to Streamable HTTP mode on port 8012. Connect to `http://localhost:8012/mcp`.
 
 ### Via pre-build binary
 
@@ -59,6 +58,17 @@ Mise ([mise-en-place](https://mise.jdx.dev/)) is a development environment setup
 
 ```bash
 mise i ubi:Kubedoll-Heavy-Industries/mcp-helm@latest
+```
+
+## Development
+
+This repository uses Mise to provide a self-contained toolchain and reproducible developer commands.
+
+```bash
+mise install
+mise run test
+mise run lint
+mise run build
 ```
 
 ### Install with Go

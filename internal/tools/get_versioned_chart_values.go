@@ -2,62 +2,49 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
 )
 
-func NewGetChartValuesTool() mcp.Tool {
-	return mcp.NewTool("get_chart_values",
-		mcp.WithDescription("Retrieves values file for the chart"),
-		mcp.WithString("repository_url",
-			mcp.Required(),
-			mcp.Description("Helm repository URL"),
-		),
-		mcp.WithString("chart_name",
-			mcp.Required(),
-			mcp.Description("Chart name"),
-		),
-		mcp.WithString("chart_version",
-			mcp.Description("Chart version. If omitted the latest version will be used")),
-	)
+type getChartValuesInput struct {
+	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
+	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
+	ChartVersion  string `json:"chart_version,omitempty" jsonschema:"Chart version. If omitted the latest version will be used"`
 }
 
-func GetChartValuesHandler(c *helm_client.HelmClient) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		repositoryURL, err := request.RequireString("repository_url")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		repositoryURL = strings.TrimSpace(repositoryURL)
+type getChartValuesOutput struct {
+	Values string `json:"values" jsonschema:"The chart values.yaml contents"`
+}
 
-		chartName, err := request.RequireString("chart_name")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+func newGetChartValuesHandler(c *helm_client.HelmClient) mcp.ToolHandlerFor[getChartValuesInput, getChartValuesOutput] {
+	return func(_ context.Context, _ *mcp.CallToolRequest, in getChartValuesInput) (*mcp.CallToolResult, getChartValuesOutput, error) {
+		repositoryURL := strings.TrimSpace(in.RepositoryURL)
+		if repositoryURL == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "repository_url is required"}}}, getChartValuesOutput{}, nil
 		}
-		chartName = strings.TrimSpace(chartName)
+		chartName := strings.TrimSpace(in.ChartName)
+		if chartName == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "chart_name is required"}}}, getChartValuesOutput{}, nil
+		}
 
-		chartVersion := request.GetString("chart_version", "")
+		chartVersion := strings.TrimSpace(in.ChartVersion)
 		if chartVersion == "" {
+			var err error
 			chartVersion, err = c.GetChartLatestVersion(repositoryURL, chartName)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("failed to get the latest chart version: %v", err)), nil
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get the latest chart version: %v", err)}}}, getChartValuesOutput{}, nil
 			}
 		}
 
-		charts, err := c.GetChartValues(repositoryURL, chartName, chartVersion)
+		values, err := c.GetChartValues(repositoryURL, chartName, chartVersion)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list charts: %v", err)), nil
-		}
-		encoded, err := json.MarshalIndent(charts, "", "  ")
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal charts: %v", err)), nil
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get chart values: %v", err)}}}, getChartValuesOutput{}, nil
 		}
 
-		return mcp.NewToolResultText(string(encoded)), nil
+		return nil, getChartValuesOutput{Values: values}, nil
 	}
 }

@@ -2,68 +2,50 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
 )
 
-func NewGetChartContentsTool() mcp.Tool {
-	return mcp.NewTool("get_chart_contents",
-		mcp.WithDescription("Retrieves full chart contents"),
-		mcp.WithString("repository_url",
-			mcp.Required(),
-			mcp.Description("Helm repository URL"),
-		),
-		mcp.WithString("chart_name",
-			mcp.Required(),
-			mcp.Description("Chart name"),
-		),
-		mcp.WithString("chart_version",
-			mcp.Description("Chart version. If omitted the latest version will be used"),
-		),
-		mcp.WithBoolean("recursive",
-			mcp.Description("If true, retrieves all files in the chart recursively. Defaults to false"),
-		),
-	)
+type getChartContentsInput struct {
+	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
+	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
+	ChartVersion  string `json:"chart_version,omitempty" jsonschema:"Chart version. If omitted the latest version will be used"`
+	Recursive     bool   `json:"recursive,omitempty" jsonschema:"If true, retrieves all files in the chart recursively. Defaults to false"`
 }
 
-func GetChartContentsHandler(c *helm_client.HelmClient) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		repositoryURL, err := request.RequireString("repository_url")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		repositoryURL = strings.TrimSpace(repositoryURL)
+type getChartContentsOutput struct {
+	Contents string `json:"contents" jsonschema:"The chart contents"`
+}
 
-		chartName, err := request.RequireString("chart_name")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+func newGetChartContentsHandler(c *helm_client.HelmClient) mcp.ToolHandlerFor[getChartContentsInput, getChartContentsOutput] {
+	return func(_ context.Context, _ *mcp.CallToolRequest, in getChartContentsInput) (*mcp.CallToolResult, getChartContentsOutput, error) {
+		repositoryURL := strings.TrimSpace(in.RepositoryURL)
+		if repositoryURL == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "repository_url is required"}}}, getChartContentsOutput{}, nil
 		}
-		chartName = strings.TrimSpace(chartName)
+		chartName := strings.TrimSpace(in.ChartName)
+		if chartName == "" {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "chart_name is required"}}}, getChartContentsOutput{}, nil
+		}
 
-		chartVersion := request.GetString("chart_version", "")
+		chartVersion := strings.TrimSpace(in.ChartVersion)
 		if chartVersion == "" {
+			var err error
 			chartVersion, err = c.GetChartLatestVersion(repositoryURL, chartName)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("failed to get the latest chart version: %v", err)), nil
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get the latest chart version: %v", err)}}}, getChartContentsOutput{}, nil
 			}
 		}
 
-		recursive := request.GetBool("recursive", false)
-
-		charts, err := c.GetChartContents(repositoryURL, chartName, chartVersion, recursive)
+		contents, err := c.GetChartContents(repositoryURL, chartName, chartVersion, in.Recursive)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list charts: %v", err)), nil
-		}
-		encoded, err := json.MarshalIndent(charts, "", "  ")
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal charts: %v", err)), nil
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get chart contents: %v", err)}}}, getChartContentsOutput{}, nil
 		}
 
-		return mcp.NewToolResultText(string(encoded)), nil
+		return nil, getChartContentsOutput{Contents: contents}, nil
 	}
 }
