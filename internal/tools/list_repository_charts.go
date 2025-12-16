@@ -2,37 +2,39 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
 )
 
-func NewListChartsTool() mcp.Tool {
-	return mcp.NewTool("list_repository_charts",
-		mcp.WithDescription("Lists all charts available in the repository"),
-		mcp.WithString("repository_url",
-			mcp.Required(),
-			mcp.Description("Helm repository URL"),
-		),
-	)
+type listRepositoryChartsInput struct {
+	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
 }
 
-func GetListChartsHandler(c *helm_client.HelmClient) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		repositoryURL, err := request.RequireString("repository_url")
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+type listRepositoryChartsOutput struct {
+	Charts []string `json:"charts" jsonschema:"Charts available in the repository"`
+}
+
+func newListRepositoryChartsHandler(c *helm_client.HelmClient) mcp.ToolHandlerFor[listRepositoryChartsInput, listRepositoryChartsOutput] {
+	return func(_ context.Context, _ *mcp.CallToolRequest, in listRepositoryChartsInput) (*mcp.CallToolResult, listRepositoryChartsOutput, error) {
+		repositoryURL := strings.TrimSpace(in.RepositoryURL)
+		if repositoryURL == "" {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "repository_url is required"}},
+			}, listRepositoryChartsOutput{}, nil
 		}
-		repositoryURL = strings.TrimSpace(repositoryURL)
 
 		charts, err := c.ListCharts(repositoryURL)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list charts: %v", err)), nil
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "failed to list charts: " + err.Error()}},
+			}, listRepositoryChartsOutput{}, nil
 		}
 
-		return mcp.NewToolResultText(strings.Join(charts, ", ")), nil
+		return nil, listRepositoryChartsOutput{Charts: charts}, nil
 	}
 }
