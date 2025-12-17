@@ -1,0 +1,32 @@
+repos:
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: gofmt -l -w -s
+        language: system
+        types: [go]
+        pass_filenames: true
+
+      - id: go-vet
+        name: go vet
+        entry: go vet
+        language: system
+        types: [go]
+        pass_filenames: false
+        args: [./...]
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: mise exec -- golangci-lint run --modules-download-mode readonly
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-test
+        name: go test
+        entry: go test
+        language: system
+        types: [go]
+        pass_filenames: false
+        args: [./...]

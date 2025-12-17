@@ -118,6 +118,8 @@ func run(cmd *cobra.Command, args []string) {
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", h)
 		mux.Handle("/mcp/", h)
+		mux.HandleFunc("/healthz", healthzHandler)
+		mux.HandleFunc("/readyz", readyzHandler)
 
 		srv := &http.Server{Addr: cfg.httpListenAddr, Handler: mux}
 		if err := srv.ListenAndServe(); err != nil {
@@ -128,12 +130,26 @@ func run(cmd *cobra.Command, args []string) {
 		mux := http.NewServeMux()
 		mux.Handle("/sse", h)
 		mux.Handle("/message", h)
+		mux.HandleFunc("/healthz", healthzHandler)
+		mux.HandleFunc("/readyz", readyzHandler)
 
 		srv := &http.Server{Addr: cfg.httpListenAddr, Handler: mux}
 		if err := srv.ListenAndServe(); err != nil {
 			logger.Error("Failed to start SSE server", zap.Error(err))
 		}
 	}
+}
+
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"status":"ok","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
+}
+
+func readyzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"status":"ready","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
 }
 
 func splitCSVHosts(in string) []string {
