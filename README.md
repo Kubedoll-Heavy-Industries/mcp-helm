@@ -1,118 +1,303 @@
-# MCP Helm Server
+# mcp-helm
 
-An MCP (Model Context Protocol) server that provides tools for interacting with Helm repositories and charts. This
-server enables AI assistants to query Helm repositories, retrieve chart information, and access chart values without
-requiring local Helm installation.
+[![CI](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/lint.yml/badge.svg)](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/lint.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kubedoll-Heavy-Industries/mcp-helm/badge)](https://scorecard.dev/viewer/?uri=github.com/Kubedoll-Heavy-Industries/mcp-helm)
+[![codecov](https://codecov.io/gh/Kubedoll-Heavy-Industries/mcp-helm/branch/main/graph/badge.svg)](https://codecov.io/gh/Kubedoll-Heavy-Industries/mcp-helm)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Kubedoll-Heavy-Industries/mcp-helm)](https://goreportcard.com/report/github.com/Kubedoll-Heavy-Industries/mcp-helm)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Kubedoll-Heavy-Industries/mcp-helm)](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/blob/main/go.mod)
+[![Release](https://img.shields.io/github/v/release/Kubedoll-Heavy-Industries/mcp-helm)](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/Kubedoll-Heavy-Industries/mcp-helm)](LICENSE)
 
-The purpose of using MCP for Helm is to avoid making up format of `values.yaml` and contents of the charts when working
-with LLMs.
-Instead, the server provides a standardized way to access this information, making it easier for AI assistants to
-interact with Helm charts and repositories.
+Give your AI assistant access to real Helm chart data. No more hallucinated `values.yaml` files.
 
-This MCP server is and will be providing tools for working with Helm repositories only. If you need to work with other
-Kubernetes resources, consider using a separate MCP server that provides tools for Kubernetes resources.
+## What is this?
 
-## Features
+When you ask Claude, Cursor, or other AI assistants to help with Kubernetes deployments, they don't have access to Helm chart schemas. So they guess — and the guesses look plausible but don't match reality.
 
-The MCP Helm server provides the following tools:
+**Without mcp-helm:**
+- :x: Makes multiple web requests searching for chart documentation
+- :x: Tries to download values.yaml from GitHub (often wrong branch or version)
+- :x: Uses `grep -A 50` to extract config sections, missing context or grabbing irrelevant lines
+- :x: Hallucinates field names that look right but don't exist
+- :x: Suggests stale or deprecated chart versions
+- :x: Wastes tokens and your time on approaches that can't work
 
-- **list_repository_charts** - Lists all charts available in a Helm repository
-- **get_latest_version_of_chart** - Retrieves the latest version of a specific chart
-- **get_chart_values** - Retrieves the values file for a chart (latest version or specific version)
-- **get_chart_contents** - Retrieves the contents of a chart (including templates, values, and metadata).
-- **get_chart_dependencies** - Retrieves the dependencies of a chart as defined in its `Chart.yaml` file.
+**With mcp-helm:**
+- :white_check_mark: Queries the actual Helm repository for real chart data
+- :white_check_mark: Extracts exact subkeys and values the agent needs
+- :white_check_mark: Gets the latest chart version automatically
+- :white_check_mark: No wasted tokens on web fetches or guesswork
+- :white_check_mark: Correct configurations the first time
 
-## Try without installation
+mcp-helm implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) — a standard way for AI assistants to access external data sources.
 
-There is a publicly available instance of the MCP Helm server that you can use to test the features without installing
-it: https://mcp-helm.kubedoll.com/mcp
+## Try It Now
+
+Add this to your editor's MCP config to use our public instance (rate limited, no install required):
+
+```json
+{
+  "mcpServers": {
+    "helm": {
+      "type": "streamable-http",
+      "url": "https://mcp-helm.fly.dev/mcp"
+    }
+  }
+}
+```
+
+Then ask your AI: *"What values can I configure for the bitnami/postgresql chart?"*
+
+## Editor Setup
+
+### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "helm": {
+      "command": "mcp-helm",
+      "args": ["--mode=stdio"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Edit MCP settings in Cursor's configuration:
+
+```json
+{
+  "mcpServers": {
+    "helm": {
+      "command": "mcp-helm",
+      "args": ["--mode=stdio"]
+    }
+  }
+}
+```
+
+### VS Code + Continue
+
+Add to your Continue config (`~/.continue/config.json`):
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "mcp-helm",
+          "args": ["--mode=stdio"]
+        }
+      }
+    ]
+  }
+}
+```
+
+### Other Editors
+
+Any MCP-compatible client can connect. For local use, **stdio is recommended** — it's faster and requires no port management:
+
+```bash
+mcp-helm --mode=stdio
+```
+
+For shared or remote setups, use HTTP:
+
+```bash
+mcp-helm --mode=http --addr=:8012
+# Connect to http://localhost:8012/mcp
+```
+
+## Available Tools
+
+Once connected, your AI assistant can use these tools:
+
+| Tool | What it does |
+|------|--------------|
+| `list_repository_charts` | List all charts in a Helm repo (e.g., `https://charts.bitnami.com/bitnami`) |
+| `get_latest_version_of_chart` | Get the current version of a chart |
+| `get_chart_values` | Fetch the actual `values.yaml` for any chart version |
+| `get_chart_contents` | Get full chart contents (templates, helpers, NOTES.txt) |
+| `get_chart_dependencies` | List chart dependencies from Chart.yaml |
 
 ## Installation
 
-### Run with docker
+You only need to install mcp-helm if you want to run it locally instead of using the public instance.
 
-You can run the MCP Helm server using Docker. This is the easiest way to get started without needing to install Go or
-build from source.
-
-```bash
-docker run -d --name mcp-helm -p 8012:8012 ghcr.io/kubedoll-heavy-industries/mcp-helm:latest
-```
-
-The container defaults to Streamable HTTP mode on port 8012. Connect to `http://localhost:8012/mcp`.
-
-### Via pre-build binary
-
-Download binary from the [releases page](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases).
-
-Example for Linux x86_64 (note that other architectures and platforms are also available):
+### Homebrew (macOS/Linux)
 
 ```bash
-latest=$(curl -s https://api.github.com/repos/Kubedoll-Heavy-Industries/mcp-helm/releases/latest | grep 'tag_name' | cut -d\" -f4)
-wget https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases/download/$latest/mcp-helm_Linux_x86_64.tar.gz
-tar axvf mcp-helm_Linux_x86_64.tar.gz
+# Coming soon
 ```
 
-### Via Mise
-
-Mise ([mise-en-place](https://mise.jdx.dev/)) is a development environment setup tool.
+### Binary Download
 
 ```bash
-mise i ubi:Kubedoll-Heavy-Industries/mcp-helm@latest
+# Linux/macOS - downloads the right binary for your system
+curl -fsSL https://github.com/Kubedoll-Heavy-Industries/mcp-helm/releases/latest/download/mcp-helm_$(uname -s)_$(uname -m).tar.gz | tar xz
+sudo mv mcp-helm /usr/local/bin/
 ```
 
-## Development
-
-This repository uses Mise to provide a self-contained toolchain and reproducible developer commands.
-
-```bash
-mise install
-mise run test
-mise run lint
-mise run build
-```
-
-### Install with Go
-
-> Note: Go 1.24.3 is required.
+### Go Install
 
 ```bash
 go install github.com/Kubedoll-Heavy-Industries/mcp-helm/cmd/mcp-helm@latest
 ```
 
-### Build from Source
+### Mise
 
-> Note: Go 1.24.3 is required.
+```bash
+mise install ubi:Kubedoll-Heavy-Industries/mcp-helm@latest
+```
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Kubedoll-Heavy-Industries/mcp-helm.git
-   cd mcp-helm
-   ```
+## Self-Hosting
 
-2. Build the binary:
-   ```bash
-   go build -o mcp-helm ./cmd/mcp-helm
-   ```
+If you need a private instance or want lower latency:
 
-3. Run the server:
-   ```bash
-   ./mcp-helm
-   ```
+### Docker
 
-## Configuration
+```bash
+docker run -p 8012:8012 ghcr.io/kubedoll-heavy-industries/mcp-helm:latest \
+  --mode=http --addr=:8012
+```
 
-Configure your MCP client to connect to this server. The server implements the standard MCP protocol for tool discovery
-and execution.
+### Fly.io
 
-## Roadmap
+Deploy your own instance using our [fly.toml](fly.toml):
 
-- [ ] Add more tools
-    - [x] List all charts in a repository
-    - [x] Get latest version of the chart
-    - [x] Get values for chart
-    - [x] Get values for the latest version of the chart
-    - [x] Extract full chart content
-    - [x] Extract dependant charts from Charts.yaml
-    - [ ] Extract images used in chart
-- [ ] Support using private registries
-    - [ ] Add a way to provide credentials
+```bash
+fly launch --copy-config
+fly deploy
+```
+
+## Configuration Reference
+
+### Transport Modes
+
+| Mode | Use case | Recommendation |
+|------|----------|----------------|
+| `stdio` | Local editor integration | **Use this for local setups** — faster, simpler, no ports to manage |
+| `http` | Shared server, multiple clients | Use for self-hosted/production deployments |
+| `sse` | Legacy MCP clients | Deprecated — use `http` for new setups |
+
+### All CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mode` | `stdio` | Transport mode: `stdio`, `http`, or `sse` |
+| `--addr` | `:8012` | Listen address for http/sse modes |
+| `--timeout` | `30s` | Timeout for Helm operations |
+| `--allow-private-ips` | `false` | Allow fetching from private/loopback IPs |
+| `--allowed-hosts` | | Hostname allowlist (comma-separated) |
+| `--denied-hosts` | | Hostname denylist (comma-separated) |
+| `--max-output` | `2097152` | Max tool output size in bytes |
+
+### Health Endpoints
+
+Available in `http` and `sse` modes:
+
+- `GET /healthz` — Liveness probe
+- `GET /readyz` — Readiness probe
+
+## Development
+
+### Prerequisites
+
+- Go 1.24+
+- [Mise](https://mise.jdx.dev/) (recommended) or manual tool installation
+
+### Setup
+
+```bash
+git clone https://github.com/Kubedoll-Heavy-Industries/mcp-helm.git
+cd mcp-helm
+mise install          # Install Go and dev tools
+```
+
+### Development Commands
+
+```bash
+mise run dev          # Start server with hot reload (uses Air)
+mise run test         # Run tests
+mise run lint         # Run golangci-lint
+mise run build        # Build binary to ./bin/mcp-helm
+```
+
+### Manual Build
+
+```bash
+go build -o mcp-helm ./cmd/mcp-helm
+./mcp-helm --help
+```
+
+### Testing with MCP Inspector
+
+```bash
+mise run inspector    # Opens MCP Inspector UI
+```
+
+### Project Structure
+
+```
+├── cmd/mcp-helm/     # CLI entrypoint
+├── internal/
+│   ├── tools/        # MCP tool implementations
+│   └── resources/    # MCP resource implementations
+├── lib/
+│   ├── helm_client/  # Helm repository client
+│   ├── logger/       # Structured logging
+│   └── ratelimit/    # Rate limiting middleware
+└── docker/           # Container configurations
+```
+
+### Submitting Changes
+
+1. Fork the repository
+2. Create a feature branch from `dev`
+3. Make your changes with [conventional commits](https://www.conventionalcommits.org/)
+4. Run `mise run test && mise run lint`
+5. Open a PR to `dev`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+## Troubleshooting
+
+### "Connection refused" or "Cannot connect to server"
+
+**stdio mode**: Ensure the binary is in your PATH and executable:
+```bash
+which mcp-helm
+mcp-helm --version
+```
+
+**http mode**: Check the server is running and the port is correct:
+```bash
+curl http://localhost:8012/healthz
+```
+
+### "Tool not found" or tools not appearing
+
+Your MCP client may need to be restarted after config changes. In Claude Desktop, fully quit and reopen the app.
+
+### Rate limited on public instance
+
+The public instance allows 60 requests/minute. For higher limits, [self-host](#self-hosting) your own instance.
+
+### Helm repository errors
+
+Some repositories require authentication or have rate limits. Try a different repository or self-host with `--allowed-hosts` configured.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
