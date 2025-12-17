@@ -69,11 +69,28 @@ func GetChartDependencies(chart *chartv2.Chart) ([]string, error) {
 
 func GetChartContents(c *chartv2.Chart, recursive bool) (string, error) {
 	sb := strings.Builder{}
+
+	// Include raw files (Chart.yaml, values.yaml, etc.)
+	for _, file := range c.Raw {
+		sb.WriteString(fmt.Sprintf("# file: %s/%s\n", c.Name(), file.Name))
+		sb.Write(file.Data)
+		sb.WriteString("\n\n")
+	}
+
+	// Include template files
+	for _, file := range c.Templates {
+		sb.WriteString(fmt.Sprintf("# file: %s/%s\n", c.Name(), file.Name))
+		sb.Write(file.Data)
+		sb.WriteString("\n\n")
+	}
+
+	// Include extra files
 	for _, file := range c.Files {
 		sb.WriteString(fmt.Sprintf("# file: %s/%s\n", c.Name(), file.Name))
 		sb.Write(file.Data)
 		sb.WriteString("\n\n")
 	}
+
 	if recursive {
 		for _, subChart := range c.Dependencies() {
 			sb.WriteString(fmt.Sprintf("# Subchart: %s\n", subChart.Name()))

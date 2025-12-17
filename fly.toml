@@ -1,0 +1,48 @@
+# Fly.io configuration for mcp-helm
+# https://fly.io/docs/reference/configuration/
+
+app = 'mcp-helm'
+primary_region = 'sjc'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[http_service]
+  internal_port = 8012
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+[processes]
+  app = '--mode=http --addr=:8012'
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[checks]
+  [checks.liveness]
+    port = 8012
+    type = 'http'
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/healthz'
+
+  [checks.readiness]
+    port = 8012
+    type = 'http'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '5s'
+    method = 'GET'
+    path = '/readyz'
