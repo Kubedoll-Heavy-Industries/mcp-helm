@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/compare/v1.0.0...v1.0.1) (2025-12-17)
+
+
+### Bug Fixes
+
+* GetChartContents missing Raw/Templates + add Fly.io deployment ([#11](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/issues/11)) ([ee93d23](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/commit/ee93d2375fe115af5d3905310c2a9cebeaa1fd95))
+
 ## [1.0.0](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/compare/v1.0.0...v1.0.0) (2025-12-16)
 
 
