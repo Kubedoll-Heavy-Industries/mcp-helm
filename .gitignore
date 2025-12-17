@@ -36,7 +36,7 @@ tmp/
 dist
 
 # Built binary
-mcp-helm
+/mcp-helm
 
 # Agent work directory (keep README, ignore work files)
 docs/llms/work/*

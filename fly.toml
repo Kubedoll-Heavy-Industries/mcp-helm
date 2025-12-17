@@ -21,7 +21,7 @@ primary_region = 'sjc'
     soft_limit = 200
 
 [processes]
-  app = '--mode=http --addr=:8012'
+  app = '--transport=http --listen=:8012'
 
 [[vm]]
   memory = '256mb'
