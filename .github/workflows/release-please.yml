@@ -36,7 +36,7 @@ jobs:
 
   goreleaser:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.run_goreleaser)
+    if: always() && (needs.release-please.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.run_goreleaser))
     runs-on: ubuntu-latest
     permissions:
       contents: write
