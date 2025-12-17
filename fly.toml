@@ -1,5 +1,8 @@
 # Fly.io configuration for mcp-helm
 # https://fly.io/docs/reference/configuration/
+#
+# Custom domain: mcp-helm.kubedoll.com
+# Configure with: fly certs add mcp-helm.kubedoll.com
 
 app = 'mcp-helm'
 primary_region = 'sjc'
