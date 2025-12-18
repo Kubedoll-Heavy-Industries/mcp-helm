@@ -49,7 +49,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating logger: %w", err)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	// Create Helm client
 	helmClient := helm.NewClient(

@@ -17,16 +17,16 @@ import (
 
 const (
 	// HTTP repositories
-	bitnamiRepo      = "https://charts.bitnami.com/bitnami"      // Popular vendor, many charts
+	bitnamiRepo      = "https://charts.bitnami.com/bitnami"                 // Popular vendor, many charts
 	prometheusRepo   = "https://prometheus-community.github.io/helm-charts" // CNCF ecosystem
-	grafanaRepo      = "https://grafana.github.io/helm-charts"   // Popular observability vendor
-	ingressNginxRepo = "https://kubernetes.github.io/ingress-nginx" // Kubernetes official
+	grafanaRepo      = "https://grafana.github.io/helm-charts"              // Popular observability vendor
+	ingressNginxRepo = "https://kubernetes.github.io/ingress-nginx"         // Kubernetes official
 
 	// Test charts from different repos
-	testChart       = "nginx"              // Simple Bitnami chart
-	prometheusChart = "prometheus"         // Has dependencies (alertmanager, etc.)
-	grafanaChart    = "grafana"            // Popular standalone chart
-	ingressChart    = "ingress-nginx"      // Kubernetes official chart
+	testChart       = "nginx"         // Simple Bitnami chart
+	prometheusChart = "prometheus"    // Has dependencies (alertmanager, etc.)
+	grafanaChart    = "grafana"       // Popular standalone chart
+	ingressChart    = "ingress-nginx" // Kubernetes official chart
 )
 
 func newTestClient(t *testing.T) helm.ChartService {

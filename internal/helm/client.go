@@ -361,7 +361,7 @@ func (c *Client) loadHelmChart(ctx context.Context, repoURL, chartName, version 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	dl := downloader.ChartDownloader{
 		Out:              io.Discard,

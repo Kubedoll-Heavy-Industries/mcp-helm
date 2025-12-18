@@ -38,6 +38,10 @@ jobs:
 
       - name: Run tests with race detector
         run: go test -race -v ./...
+        env:
+          GOTOOLCHAIN: auto
 
       - name: Build binary
         run: go build -v ./cmd/mcp-helm
+        env:
+          GOTOOLCHAIN: auto

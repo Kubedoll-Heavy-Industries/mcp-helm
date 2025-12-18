@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 	"gopkg.in/yaml.v2"
+	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // chartYAML represents the structure of Chart.yaml for dependency parsing.
@@ -26,7 +26,7 @@ func extractDependencies(chart *chartv2.Chart) ([]Dependency, error) {
 	}
 
 	if len(rawYAML) == 0 {
-		return nil, fmt.Errorf("Chart.yaml not found in chart %s", chart.Name())
+		return nil, fmt.Errorf("chart.yaml not found in chart %s", chart.Name())
 	}
 
 	var cy chartYAML

@@ -430,11 +430,11 @@ func extractYAMLPath(data []byte, path string) (string, error) {
 		}
 
 		// Handle array index like "items[0]"
-		var arrayIndex int = -1
+		arrayIndex := -1
 		if idx := strings.Index(part, "["); idx != -1 {
 			end := strings.Index(part, "]")
 			if end > idx {
-				fmt.Sscanf(part[idx+1:end], "%d", &arrayIndex)
+				_, _ = fmt.Sscanf(part[idx+1:end], "%d", &arrayIndex)
 				part = part[:idx]
 			}
 		}
@@ -489,4 +489,3 @@ func truncateLines(content string, maxLines int) (string, bool) {
 	truncated += fmt.Sprintf("\n\n... truncated (%d more lines)", len(lines)-maxLines)
 	return truncated, true
 }
-
