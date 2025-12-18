@@ -65,7 +65,7 @@ version: 1.0.0
 		_, err := extractDependencies(chart)
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Chart.yaml not found")
+		assert.Contains(t, err.Error(), "chart.yaml not found")
 	})
 
 	t.Run("invalid YAML", func(t *testing.T) {
