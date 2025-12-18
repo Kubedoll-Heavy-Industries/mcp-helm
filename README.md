@@ -40,7 +40,7 @@ Add this to your editor's MCP config to use our public instance (rate limited, n
   "mcpServers": {
     "helm": {
       "type": "streamable-http",
-      "url": "https://mcp-helm.fly.dev/mcp"
+      "url": "https://helm-mcp.kubedoll.com/mcp"
     }
   }
 }

@@ -21,13 +21,21 @@ type RateLimitConfig struct {
 }
 
 // RateLimiter implements per-IP rate limiting using token bucket algorithm.
+// It automatically cleans up stale entries to prevent unbounded memory growth.
 type RateLimiter struct {
 	cfg      RateLimitConfig
 	mu       sync.Mutex
-	limiters map[string]*rate.Limiter
+	limiters map[string]*limiterEntry
+	stopCh   chan struct{}
+}
+
+type limiterEntry struct {
+	limiter    *rate.Limiter
+	lastAccess time.Time
 }
 
 // NewRateLimiter creates a new rate limiter with the given configuration.
+// Call Stop() when done to release resources.
 func NewRateLimiter(cfg RateLimitConfig) *RateLimiter {
 	if cfg.RPS <= 0 {
 		cfg.RPS = 10
@@ -35,9 +43,52 @@ func NewRateLimiter(cfg RateLimitConfig) *RateLimiter {
 	if cfg.Burst <= 0 {
 		cfg.Burst = 20
 	}
-	return &RateLimiter{
+	rl := &RateLimiter{
 		cfg:      cfg,
-		limiters: make(map[string]*rate.Limiter),
+		limiters: make(map[string]*limiterEntry),
+		stopCh:   make(chan struct{}),
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+// Stop stops the cleanup goroutine. Safe to call multiple times.
+func (rl *RateLimiter) Stop() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	select {
+	case <-rl.stopCh:
+		// Already stopped
+	default:
+		close(rl.stopCh)
+	}
+}
+
+// cleanupLoop periodically removes stale limiter entries.
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			rl.cleanup()
+		case <-rl.stopCh:
+			return
+		}
+	}
+}
+
+// cleanup removes entries that haven't been accessed in 30 minutes.
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	threshold := time.Now().Add(-30 * time.Minute)
+	for ip, entry := range rl.limiters {
+		if entry.lastAccess.Before(threshold) {
+			delete(rl.limiters, ip)
+		}
 	}
 }
 
@@ -46,12 +97,15 @@ func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	limiter, exists := rl.limiters[ip]
+	entry, exists := rl.limiters[ip]
 	if !exists {
-		limiter = rate.NewLimiter(rate.Limit(rl.cfg.RPS), rl.cfg.Burst)
-		rl.limiters[ip] = limiter
+		entry = &limiterEntry{
+			limiter: rate.NewLimiter(rate.Limit(rl.cfg.RPS), rl.cfg.Burst),
+		}
+		rl.limiters[ip] = entry
 	}
-	return limiter
+	entry.lastAccess = time.Now()
+	return entry.limiter
 }
 
 // Middleware returns an HTTP middleware that enforces rate limiting.

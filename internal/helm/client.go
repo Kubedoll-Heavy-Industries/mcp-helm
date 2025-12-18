@@ -207,6 +207,47 @@ func (c *Client) GetDependencies(ctx context.Context, repoURL, chartName, versio
 	return extractDependencies(hc)
 }
 
+// ListFiles returns metadata about all files in a chart.
+func (c *Client) ListFiles(ctx context.Context, repoURL, chartName, version string) ([]FileInfo, error) {
+	hc, err := c.loadHelmChart(ctx, repoURL, chartName, version)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []FileInfo
+
+	for _, f := range hc.Raw {
+		files = append(files, FileInfo{Path: f.Name, Size: len(f.Data)})
+	}
+	for _, f := range hc.Templates {
+		files = append(files, FileInfo{Path: f.Name, Size: len(f.Data)})
+	}
+	for _, f := range hc.Files {
+		files = append(files, FileInfo{Path: f.Name, Size: len(f.Data)})
+	}
+
+	return files, nil
+}
+
+// GetFile returns the contents of a specific file in a chart.
+func (c *Client) GetFile(ctx context.Context, repoURL, chartName, version, path string) ([]byte, error) {
+	hc, err := c.loadHelmChart(ctx, repoURL, chartName, version)
+	if err != nil {
+		return nil, err
+	}
+
+	data, found := findChartFile(hc, path)
+	if !found {
+		return nil, fmt.Errorf("file not found: %s", path)
+	}
+
+	if c.opts.maxOutputBytes > 0 && len(data) > c.opts.maxOutputBytes {
+		return nil, &OutputTooLargeError{Size: len(data), Limit: c.opts.maxOutputBytes}
+	}
+
+	return data, nil
+}
+
 // RefreshIndex forces a refresh of the repository index cache.
 func (c *Client) RefreshIndex(ctx context.Context, repoURL string) error {
 	_, err := c.getIndex(ctx, repoURL, true)

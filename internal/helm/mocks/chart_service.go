@@ -83,6 +83,24 @@ func (m *ChartService) GetDependencies(ctx context.Context, repoURL, chart, vers
 	return args.Get(0).([]helm.Dependency), args.Error(1)
 }
 
+// ListFiles mocks the ListFiles method.
+func (m *ChartService) ListFiles(ctx context.Context, repoURL, chart, version string) ([]helm.FileInfo, error) {
+	args := m.Called(ctx, repoURL, chart, version)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]helm.FileInfo), args.Error(1)
+}
+
+// GetFile mocks the GetFile method.
+func (m *ChartService) GetFile(ctx context.Context, repoURL, chart, version, path string) ([]byte, error) {
+	args := m.Called(ctx, repoURL, chart, version, path)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
+}
+
 // RefreshIndex mocks the RefreshIndex method.
 func (m *ChartService) RefreshIndex(ctx context.Context, repoURL string) error {
 	args := m.Called(ctx, repoURL)

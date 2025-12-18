@@ -34,6 +34,12 @@ type ChartService interface {
 	// GetDependencies returns the chart's dependencies.
 	GetDependencies(ctx context.Context, repoURL, chart, version string) ([]Dependency, error)
 
+	// ListFiles returns metadata about all files in a chart.
+	ListFiles(ctx context.Context, repoURL, chart, version string) ([]FileInfo, error)
+
+	// GetFile returns the contents of a specific file in a chart.
+	GetFile(ctx context.Context, repoURL, chart, version, path string) ([]byte, error)
+
 	// RefreshIndex forces a refresh of the repository index cache.
 	RefreshIndex(ctx context.Context, repoURL string) error
 }
@@ -63,9 +69,17 @@ type Chart struct {
 
 // Dependency represents a chart dependency.
 type Dependency struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Repository string `json:"repository"`
+	Name       string `json:"name" yaml:"name"`
+	Version    string `json:"version" yaml:"version"`
+	Repository string `json:"repository,omitempty" yaml:"repository"`
+	Condition  string `json:"condition,omitempty" yaml:"condition"`
+	Alias      string `json:"alias,omitempty" yaml:"alias"`
+}
+
+// FileInfo represents metadata about a file in a chart.
+type FileInfo struct {
+	Path string
+	Size int
 }
 
 // ChartReference is a validated reference to a specific chart version.

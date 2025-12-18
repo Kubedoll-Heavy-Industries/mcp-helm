@@ -73,13 +73,15 @@ func (s *Server) runHTTP(ctx context.Context) error {
 	handler = RecoveryMiddleware(s.logger)(handler)
 	handler = LoggingMiddleware(s.logger)(handler)
 
+	var rateLimiter *RateLimiter
 	if s.cfg.RateLimitEnabled {
-		rl := NewRateLimiter(RateLimitConfig{
+		rateLimiter = NewRateLimiter(RateLimitConfig{
 			RPS:            s.cfg.RateLimitRPS,
 			Burst:          s.cfg.RateLimitBurst,
 			TrustedProxies: s.cfg.TrustedProxies,
 		})
-		handler = rl.Middleware(handler)
+		defer rateLimiter.Stop()
+		handler = rateLimiter.Middleware(handler)
 		s.logger.Info("rate limiting enabled",
 			zap.Float64("rps", s.cfg.RateLimitRPS),
 			zap.Int("burst", s.cfg.RateLimitBurst),

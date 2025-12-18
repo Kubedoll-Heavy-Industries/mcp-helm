@@ -31,64 +31,71 @@ func New(svc helm.ChartService, logger *zap.Logger) *Handler {
 
 // Register registers all Helm tools with the MCP server.
 func (h *Handler) Register(s *mcp.Server) {
-	// Chart listing and discovery
+	// Repository tools
 	mcputil.RegisterTool(s, mcputil.ToolDef{
 		Name:        "list_repository_charts",
-		Description: "Lists all charts available in a Helm repository",
+		Description: "List charts in a Helm repository (paginated, default limit=50)",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.listCharts())
+	}, h.listRepositoryCharts())
 
+	mcputil.RegisterTool(s, mcputil.ToolDef{
+		Name:        "refresh_repository_index",
+		Description: "Force refresh of cached repository index",
+		ReadOnly:    false,
+		OpenWorld:   true,
+	}, h.refreshIndex())
+
+	// Chart version tools
 	mcputil.RegisterTool(s, mcputil.ToolDef{
 		Name:        "list_chart_versions",
-		Description: "Lists all versions of a chart with metadata (appVersion, created, deprecated)",
+		Description: "List versions of a chart with metadata (paginated, default limit=20)",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.listVersions())
+	}, h.listChartVersions())
 
 	mcputil.RegisterTool(s, mcputil.ToolDef{
-		Name:        "get_latest_version_of_chart",
-		Description: "Gets the latest version of a chart",
+		Name:        "get_chart_latest_version",
+		Description: "Get the latest version of a chart",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.getLatestVersion())
+	}, h.getChartLatestVersion())
 
-	// Chart content retrieval
+	// Chart content tools
 	mcputil.RegisterTool(s, mcputil.ToolDef{
 		Name:        "get_chart_values",
-		Description: "Gets the values.yaml contents for a chart",
+		Description: "Get values.yaml with optional yq-style path extraction (default max_lines=200)",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.getValues())
+	}, h.getChartValues())
 
 	mcputil.RegisterTool(s, mcputil.ToolDef{
-		Name:        "get_values_schema",
-		Description: "Gets the values.schema.json for a chart if present",
+		Name:        "get_chart_values_schema",
+		Description: "Get values.schema.json if present",
 		ReadOnly:    true,
 		OpenWorld:   true,
 	}, h.getValuesSchema())
 
 	mcputil.RegisterTool(s, mcputil.ToolDef{
-		Name:        "get_chart_contents",
-		Description: "Gets all files in a chart (templates, values, etc.)",
+		Name:        "list_chart_contents",
+		Description: "List files in a chart with optional glob pattern filter",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.getContents())
+	}, h.listChartContents())
+
+	mcputil.RegisterTool(s, mcputil.ToolDef{
+		Name:        "get_chart_content",
+		Description: "Get contents of specific files in a chart",
+		ReadOnly:    true,
+		OpenWorld:   true,
+	}, h.getChartContent())
 
 	mcputil.RegisterTool(s, mcputil.ToolDef{
 		Name:        "get_chart_dependencies",
-		Description: "Gets the dependencies defined in a chart",
+		Description: "Get chart dependencies from Chart.yaml",
 		ReadOnly:    true,
 		OpenWorld:   true,
-	}, h.getDependencies())
-
-	// Repository management
-	mcputil.RegisterTool(s, mcputil.ToolDef{
-		Name:        "refresh_repository_index",
-		Description: "Forces a refresh of the cached repository index",
-		ReadOnly:    false, // Modifies cache state
-		OpenWorld:   true,
-	}, h.refreshIndex())
+	}, h.getChartDependencies())
 }
 
 // resolveVersion returns the given version if non-empty, otherwise fetches the latest.

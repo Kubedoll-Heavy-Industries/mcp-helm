@@ -9,12 +9,15 @@ import (
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/mcputil"
 )
 
+// Default pagination limit for versions
+const defaultVersionListLimit = 20
+
 // Input/output types for version tools
 
-type listVersionsInput struct {
+type listChartVersionsInput struct {
 	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
 	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
-	Limit         int    `json:"limit,omitempty" jsonschema:"Maximum versions to return (0 = unlimited)"`
+	Limit         int    `json:"limit,omitempty" jsonschema:"Maximum versions to return (default 20, 0 = unlimited)"`
 	Offset        int    `json:"offset,omitempty" jsonschema:"Number of versions to skip"`
 }
 
@@ -25,19 +28,19 @@ type versionInfo struct {
 	Deprecated bool   `json:"deprecated" jsonschema:"Whether the version is deprecated"`
 }
 
-type listVersionsOutput struct {
+type listChartVersionsOutput struct {
 	Versions []versionInfo `json:"versions" jsonschema:"Chart versions (newest first)"`
 	Total    int           `json:"total" jsonschema:"Total versions before pagination"`
 	Limit    int           `json:"limit" jsonschema:"Applied limit"`
 	Offset   int           `json:"offset" jsonschema:"Applied offset"`
 }
 
-type getLatestVersionInput struct {
+type getChartLatestVersionInput struct {
 	RepositoryURL string `json:"repository_url" jsonschema:"Helm repository URL"`
 	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
 }
 
-type getLatestVersionOutput struct {
+type getChartLatestVersionOutput struct {
 	Version string `json:"version" jsonschema:"Latest chart version"`
 }
 
@@ -52,9 +55,9 @@ type refreshIndexOutput struct {
 
 // Handler implementations
 
-func (h *Handler) listVersions() mcp.ToolHandlerFor[listVersionsInput, listVersionsOutput] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in listVersionsInput) (*mcp.CallToolResult, listVersionsOutput, error) {
-		emptyOutput := listVersionsOutput{Versions: []versionInfo{}}
+func (h *Handler) listChartVersions() mcp.ToolHandlerFor[listChartVersionsInput, listChartVersionsOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in listChartVersionsInput) (*mcp.CallToolResult, listChartVersionsOutput, error) {
+		emptyOutput := listChartVersionsOutput{Versions: []versionInfo{}}
 
 		if err := validateRequired(map[string]string{
 			"repository_url": in.RepositoryURL,
@@ -80,14 +83,19 @@ func (h *Handler) listVersions() mcp.ToolHandlerFor[listVersionsInput, listVersi
 
 		total := len(versions)
 
-		// Apply pagination
+		// Apply pagination with default limit
+		limit := in.Limit
+		if limit == 0 {
+			limit = defaultVersionListLimit
+		}
+
 		start := in.Offset
 		if start > total {
 			start = total
 		}
 		end := total
-		if in.Limit > 0 && start+in.Limit < end {
-			end = start + in.Limit
+		if limit > 0 && start+limit < end {
+			end = start + limit
 		}
 
 		// Convert to output format
@@ -105,22 +113,22 @@ func (h *Handler) listVersions() mcp.ToolHandlerFor[listVersionsInput, listVersi
 			})
 		}
 
-		return nil, listVersionsOutput{
+		return nil, listChartVersionsOutput{
 			Versions: result,
 			Total:    total,
-			Limit:    in.Limit,
+			Limit:    limit,
 			Offset:   in.Offset,
 		}, nil
 	}
 }
 
-func (h *Handler) getLatestVersion() mcp.ToolHandlerFor[getLatestVersionInput, getLatestVersionOutput] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in getLatestVersionInput) (*mcp.CallToolResult, getLatestVersionOutput, error) {
+func (h *Handler) getChartLatestVersion() mcp.ToolHandlerFor[getChartLatestVersionInput, getChartLatestVersionOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in getChartLatestVersionInput) (*mcp.CallToolResult, getChartLatestVersionOutput, error) {
 		if err := validateRequired(map[string]string{
 			"repository_url": in.RepositoryURL,
 			"chart_name":     in.ChartName,
 		}); err != nil {
-			return err, getLatestVersionOutput{}, nil
+			return err, getChartLatestVersionOutput{}, nil
 		}
 
 		repo := strings.TrimSpace(in.RepositoryURL)
@@ -128,10 +136,10 @@ func (h *Handler) getLatestVersion() mcp.ToolHandlerFor[getLatestVersionInput, g
 
 		version, err := h.svc.GetLatestVersion(ctx, repo, chart)
 		if err != nil {
-			return mcputil.HandleError(err), getLatestVersionOutput{}, nil
+			return mcputil.HandleError(err), getChartLatestVersionOutput{}, nil
 		}
 
-		return nil, getLatestVersionOutput{Version: version}, nil
+		return nil, getChartLatestVersionOutput{Version: version}, nil
 	}
 }
 

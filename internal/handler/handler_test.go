@@ -143,7 +143,7 @@ func TestResolveVersion(t *testing.T) {
 	})
 }
 
-func TestListCharts(t *testing.T) {
+func TestListRepositoryCharts(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success", func(t *testing.T) {
@@ -152,15 +152,17 @@ func TestListCharts(t *testing.T) {
 			Return([]string{"nginx", "redis", "postgresql"}, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listCharts()
+		handler := h.listRepositoryCharts()
 
-		result, output, err := handler(ctx, nil, listChartsInput{
+		result, output, err := handler(ctx, nil, listRepositoryChartsInput{
 			RepositoryURL: "https://charts.bitnami.com/bitnami",
 		})
 
 		assert.NoError(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, []string{"nginx", "redis", "postgresql"}, output.Charts)
+		assert.Equal(t, 3, output.Total)
+		assert.Equal(t, defaultChartListLimit, output.Limit)
 		mockSvc.AssertExpectations(t)
 	})
 
@@ -170,9 +172,9 @@ func TestListCharts(t *testing.T) {
 			Return([]string{}, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listCharts()
+		handler := h.listRepositoryCharts()
 
-		result, output, err := handler(ctx, nil, listChartsInput{
+		result, output, err := handler(ctx, nil, listRepositoryChartsInput{
 			RepositoryURL: "https://empty.repo",
 		})
 
@@ -184,9 +186,9 @@ func TestListCharts(t *testing.T) {
 	t.Run("missing repository_url", func(t *testing.T) {
 		mockSvc := new(mocks.ChartService)
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listCharts()
+		handler := h.listRepositoryCharts()
 
-		result, _, err := handler(ctx, nil, listChartsInput{
+		result, _, err := handler(ctx, nil, listRepositoryChartsInput{
 			RepositoryURL: "",
 		})
 
@@ -202,9 +204,9 @@ func TestListCharts(t *testing.T) {
 			Return(nil, errors.New("network error"))
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listCharts()
+		handler := h.listRepositoryCharts()
 
-		result, _, err := handler(ctx, nil, listChartsInput{
+		result, _, err := handler(ctx, nil, listRepositoryChartsInput{
 			RepositoryURL: "https://bad.repo",
 		})
 
@@ -219,9 +221,9 @@ func TestListCharts(t *testing.T) {
 			Return([]string{"nginx"}, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listCharts()
+		handler := h.listRepositoryCharts()
 
-		result, output, err := handler(ctx, nil, listChartsInput{
+		result, output, err := handler(ctx, nil, listRepositoryChartsInput{
 			RepositoryURL: "  https://charts.bitnami.com/bitnami  ",
 		})
 
@@ -229,9 +231,52 @@ func TestListCharts(t *testing.T) {
 		assert.Nil(t, result)
 		assert.Equal(t, []string{"nginx"}, output.Charts)
 	})
+
+	t.Run("with pagination", func(t *testing.T) {
+		charts := []string{"a", "b", "c", "d", "e"}
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("ListCharts", ctx, "https://repo.com").
+			Return(charts, nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.listRepositoryCharts()
+
+		result, output, err := handler(ctx, nil, listRepositoryChartsInput{
+			RepositoryURL: "https://repo.com",
+			Limit:         2,
+			Offset:        1,
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, []string{"b", "c"}, output.Charts)
+		assert.Equal(t, 5, output.Total)
+		assert.Equal(t, 2, output.Limit)
+		assert.Equal(t, 1, output.Offset)
+	})
+
+	t.Run("with search filter", func(t *testing.T) {
+		charts := []string{"nginx", "nginx-ingress", "redis", "redis-cluster"}
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("ListCharts", ctx, "https://repo.com").
+			Return(charts, nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.listRepositoryCharts()
+
+		result, output, err := handler(ctx, nil, listRepositoryChartsInput{
+			RepositoryURL: "https://repo.com",
+			Search:        "redis",
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, []string{"redis", "redis-cluster"}, output.Charts)
+		assert.Equal(t, 2, output.Total)
+	})
 }
 
-func TestListVersions(t *testing.T) {
+func TestListChartVersions(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success", func(t *testing.T) {
@@ -245,9 +290,9 @@ func TestListVersions(t *testing.T) {
 			Return(versions, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listVersions()
+		handler := h.listChartVersions()
 
-		result, output, err := handler(ctx, nil, listVersionsInput{
+		result, output, err := handler(ctx, nil, listChartVersionsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 		})
@@ -271,9 +316,9 @@ func TestListVersions(t *testing.T) {
 			Return(versions, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listVersions()
+		handler := h.listChartVersions()
 
-		result, output, err := handler(ctx, nil, listVersionsInput{
+		result, output, err := handler(ctx, nil, listChartVersionsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			Limit:         2,
@@ -293,9 +338,9 @@ func TestListVersions(t *testing.T) {
 	t.Run("negative limit rejected", func(t *testing.T) {
 		mockSvc := new(mocks.ChartService)
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listVersions()
+		handler := h.listChartVersions()
 
-		result, _, err := handler(ctx, nil, listVersionsInput{
+		result, _, err := handler(ctx, nil, listChartVersionsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			Limit:         -1,
@@ -309,9 +354,9 @@ func TestListVersions(t *testing.T) {
 	t.Run("negative offset rejected", func(t *testing.T) {
 		mockSvc := new(mocks.ChartService)
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listVersions()
+		handler := h.listChartVersions()
 
-		result, _, err := handler(ctx, nil, listVersionsInput{
+		result, _, err := handler(ctx, nil, listChartVersionsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			Offset:        -1,
@@ -325,9 +370,9 @@ func TestListVersions(t *testing.T) {
 	t.Run("missing required fields", func(t *testing.T) {
 		mockSvc := new(mocks.ChartService)
 		h := New(mockSvc, zap.NewNop())
-		handler := h.listVersions()
+		handler := h.listChartVersions()
 
-		result, _, err := handler(ctx, nil, listVersionsInput{
+		result, _, err := handler(ctx, nil, listChartVersionsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "",
 		})
@@ -336,9 +381,35 @@ func TestListVersions(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.True(t, result.IsError)
 	})
+
+	t.Run("default limit applied", func(t *testing.T) {
+		// Create 25 versions
+		versions := make([]helm.ChartVersion, 25)
+		for i := 0; i < 25; i++ {
+			versions[i] = helm.ChartVersion{Version: "1.0." + string(rune('0'+i))}
+		}
+
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("ListVersions", ctx, "https://repo.com", "nginx").
+			Return(versions, nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.listChartVersions()
+
+		result, output, err := handler(ctx, nil, listChartVersionsInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Len(t, output.Versions, defaultVersionListLimit)
+		assert.Equal(t, 25, output.Total)
+		assert.Equal(t, defaultVersionListLimit, output.Limit)
+	})
 }
 
-func TestGetLatestVersion(t *testing.T) {
+func TestGetChartLatestVersion(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success", func(t *testing.T) {
@@ -347,9 +418,9 @@ func TestGetLatestVersion(t *testing.T) {
 			Return("2.0.0", nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getLatestVersion()
+		handler := h.getChartLatestVersion()
 
-		result, output, err := handler(ctx, nil, getLatestVersionInput{
+		result, output, err := handler(ctx, nil, getChartLatestVersionInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 		})
@@ -365,9 +436,9 @@ func TestGetLatestVersion(t *testing.T) {
 			Return("", &helm.ChartNotFoundError{Chart: "nonexistent"})
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getLatestVersion()
+		handler := h.getChartLatestVersion()
 
-		result, _, err := handler(ctx, nil, getLatestVersionInput{
+		result, _, err := handler(ctx, nil, getChartLatestVersionInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nonexistent",
 		})
@@ -378,7 +449,7 @@ func TestGetLatestVersion(t *testing.T) {
 	})
 }
 
-func TestGetValues(t *testing.T) {
+func TestGetChartValues(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success with explicit version", func(t *testing.T) {
@@ -387,9 +458,9 @@ func TestGetValues(t *testing.T) {
 			Return([]byte("replicaCount: 1\nimage: nginx"), nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getValues()
+		handler := h.getChartValues()
 
-		result, output, err := handler(ctx, nil, getValuesInput{
+		result, output, err := handler(ctx, nil, getChartValuesInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			ChartVersion:  "1.0.0",
@@ -408,9 +479,9 @@ func TestGetValues(t *testing.T) {
 			Return([]byte("replicaCount: 2"), nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getValues()
+		handler := h.getChartValues()
 
-		result, output, err := handler(ctx, nil, getValuesInput{
+		result, output, err := handler(ctx, nil, getChartValuesInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			ChartVersion:  "", // Should resolve to latest
@@ -425,9 +496,9 @@ func TestGetValues(t *testing.T) {
 	t.Run("missing required fields", func(t *testing.T) {
 		mockSvc := new(mocks.ChartService)
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getValues()
+		handler := h.getChartValues()
 
-		result, _, err := handler(ctx, nil, getValuesInput{
+		result, _, err := handler(ctx, nil, getChartValuesInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "", // Missing
 		})
@@ -436,9 +507,61 @@ func TestGetValues(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.True(t, result.IsError)
 	})
+
+	t.Run("with path extraction", func(t *testing.T) {
+		yamlContent := `server:
+  port: 8080
+  host: localhost
+client:
+  timeout: 30`
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("GetValues", ctx, "https://repo.com", "app", "1.0.0").
+			Return([]byte(yamlContent), nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.getChartValues()
+
+		result, output, err := handler(ctx, nil, getChartValuesInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "app",
+			ChartVersion:  "1.0.0",
+			Path:          ".server",
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, output.Values, "port: 8080")
+		assert.Contains(t, output.Values, "host: localhost")
+	})
+
+	t.Run("with max_lines truncation", func(t *testing.T) {
+		// Create content with many lines
+		lines := ""
+		for i := 0; i < 300; i++ {
+			lines += "line" + string(rune('0'+i%10)) + ": value\n"
+		}
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("GetValues", ctx, "https://repo.com", "nginx", "1.0.0").
+			Return([]byte(lines), nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.getChartValues()
+
+		result, output, err := handler(ctx, nil, getChartValuesInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+			ChartVersion:  "1.0.0",
+			MaxLines:      50,
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.True(t, output.Truncated)
+		assert.Contains(t, output.Values, "... truncated")
+	})
 }
 
-func TestGetValuesSchema(t *testing.T) {
+func TestGetChartValuesSchema(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("schema present", func(t *testing.T) {
@@ -483,52 +606,151 @@ func TestGetValuesSchema(t *testing.T) {
 	})
 }
 
-func TestGetContents(t *testing.T) {
+func TestListChartContents(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success", func(t *testing.T) {
+		files := []helm.FileInfo{
+			{Path: "Chart.yaml", Size: 100},
+			{Path: "values.yaml", Size: 500},
+			{Path: "templates/deployment.yaml", Size: 1000},
+		}
 		mockSvc := new(mocks.ChartService)
-		mockSvc.On("GetContents", ctx, "https://repo.com", "nginx", "1.0.0", false).
-			Return("# Chart.yaml\n...", nil)
+		mockSvc.On("ListFiles", ctx, "https://repo.com", "nginx", "1.0.0").
+			Return(files, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getContents()
+		handler := h.listChartContents()
 
-		result, output, err := handler(ctx, nil, getContentsInput{
+		result, output, err := handler(ctx, nil, listChartContentsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			ChartVersion:  "1.0.0",
-			Recursive:     false,
 		})
 
 		assert.NoError(t, err)
 		assert.Nil(t, result)
-		assert.Equal(t, "# Chart.yaml\n...", output.Contents)
+		assert.Len(t, output.Files, 3)
+		assert.Equal(t, "Chart.yaml", output.Files[0].Path)
+		assert.Equal(t, 3, output.Total)
 	})
 
-	t.Run("recursive flag passed", func(t *testing.T) {
+	t.Run("with glob pattern", func(t *testing.T) {
+		files := []helm.FileInfo{
+			{Path: "Chart.yaml", Size: 100},
+			{Path: "values.yaml", Size: 500},
+			{Path: "templates/deployment.yaml", Size: 1000},
+			{Path: "templates/service.yaml", Size: 800},
+		}
 		mockSvc := new(mocks.ChartService)
-		mockSvc.On("GetContents", ctx, "https://repo.com", "nginx", "1.0.0", true).
-			Return("# Full contents...", nil)
+		mockSvc.On("ListFiles", ctx, "https://repo.com", "nginx", "1.0.0").
+			Return(files, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getContents()
+		handler := h.listChartContents()
 
-		result, output, err := handler(ctx, nil, getContentsInput{
+		result, output, err := handler(ctx, nil, listChartContentsInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "nginx",
 			ChartVersion:  "1.0.0",
-			Recursive:     true,
+			Pattern:       "templates/*.yaml",
 		})
 
 		assert.NoError(t, err)
 		assert.Nil(t, result)
-		assert.Equal(t, "# Full contents...", output.Contents)
+		assert.Len(t, output.Files, 2)
+		assert.Equal(t, "templates/deployment.yaml", output.Files[0].Path)
+	})
+
+	t.Run("resolves latest version", func(t *testing.T) {
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("GetLatestVersion", ctx, "https://repo.com", "nginx").
+			Return("2.0.0", nil)
+		mockSvc.On("ListFiles", ctx, "https://repo.com", "nginx", "2.0.0").
+			Return([]helm.FileInfo{{Path: "Chart.yaml", Size: 100}}, nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.listChartContents()
+
+		result, output, err := handler(ctx, nil, listChartContentsInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Len(t, output.Files, 1)
 		mockSvc.AssertExpectations(t)
 	})
 }
 
-func TestGetDependencies(t *testing.T) {
+func TestGetChartContent(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("GetFile", ctx, "https://repo.com", "nginx", "1.0.0", "Chart.yaml").
+			Return([]byte("name: nginx\nversion: 1.0.0"), nil)
+		mockSvc.On("GetFile", ctx, "https://repo.com", "nginx", "1.0.0", "values.yaml").
+			Return([]byte("replicaCount: 1"), nil)
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.getChartContent()
+
+		result, output, err := handler(ctx, nil, getChartContentInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+			ChartVersion:  "1.0.0",
+			Files:         []string{"Chart.yaml", "values.yaml"},
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Len(t, output.Files, 2)
+		assert.Equal(t, "Chart.yaml", output.Files[0].Path)
+		assert.Contains(t, output.Files[0].Content, "name: nginx")
+	})
+
+	t.Run("file not found", func(t *testing.T) {
+		mockSvc := new(mocks.ChartService)
+		mockSvc.On("GetFile", ctx, "https://repo.com", "nginx", "1.0.0", "nonexistent.yaml").
+			Return(nil, errors.New("file not found: nonexistent.yaml"))
+
+		h := New(mockSvc, zap.NewNop())
+		handler := h.getChartContent()
+
+		result, output, err := handler(ctx, nil, getChartContentInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+			ChartVersion:  "1.0.0",
+			Files:         []string{"nonexistent.yaml"},
+		})
+
+		assert.NoError(t, err)
+		assert.Nil(t, result)
+		assert.Len(t, output.Files, 1)
+		assert.Contains(t, output.Files[0].Content, "not found")
+	})
+
+	t.Run("missing files parameter", func(t *testing.T) {
+		mockSvc := new(mocks.ChartService)
+		h := New(mockSvc, zap.NewNop())
+		handler := h.getChartContent()
+
+		result, _, err := handler(ctx, nil, getChartContentInput{
+			RepositoryURL: "https://repo.com",
+			ChartName:     "nginx",
+			ChartVersion:  "1.0.0",
+			Files:         []string{},
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.IsError)
+	})
+}
+
+func TestGetChartDependencies(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("success with dependencies", func(t *testing.T) {
@@ -542,9 +764,9 @@ func TestGetDependencies(t *testing.T) {
 			Return(deps, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getDependencies()
+		handler := h.getChartDependencies()
 
-		result, output, err := handler(ctx, nil, getDependenciesInput{
+		result, output, err := handler(ctx, nil, getChartDependenciesInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "app",
 			ChartVersion:  "1.0.0",
@@ -553,9 +775,8 @@ func TestGetDependencies(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Nil(t, result)
 		assert.Len(t, output.Dependencies, 2)
-		// Dependencies are JSON-encoded strings
-		assert.Contains(t, output.Dependencies[0], "redis")
-		assert.Contains(t, output.Dependencies[1], "postgresql")
+		assert.Equal(t, "redis", output.Dependencies[0].Name)
+		assert.Equal(t, "postgresql", output.Dependencies[1].Name)
 	})
 
 	t.Run("no dependencies", func(t *testing.T) {
@@ -564,9 +785,9 @@ func TestGetDependencies(t *testing.T) {
 			Return([]helm.Dependency{}, nil)
 
 		h := New(mockSvc, zap.NewNop())
-		handler := h.getDependencies()
+		handler := h.getChartDependencies()
 
-		result, output, err := handler(ctx, nil, getDependenciesInput{
+		result, output, err := handler(ctx, nil, getChartDependenciesInput{
 			RepositoryURL: "https://repo.com",
 			ChartName:     "simple",
 			ChartVersion:  "1.0.0",
