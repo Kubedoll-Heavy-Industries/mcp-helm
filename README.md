@@ -1,6 +1,6 @@
 # mcp-helm
 
-[![CI](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/lint.yml/badge.svg)](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/lint.yml)
+[![CI](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/ci.yml/badge.svg)](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kubedoll-Heavy-Industries/mcp-helm/badge)](https://scorecard.dev/viewer/?uri=github.com/Kubedoll-Heavy-Industries/mcp-helm)
 [![codecov](https://codecov.io/gh/Kubedoll-Heavy-Industries/mcp-helm/branch/main/graph/badge.svg)](https://codecov.io/gh/Kubedoll-Heavy-Industries/mcp-helm)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Kubedoll-Heavy-Industries/mcp-helm)](https://goreportcard.com/report/github.com/Kubedoll-Heavy-Industries/mcp-helm)
@@ -58,8 +58,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 {
   "mcpServers": {
     "helm": {
-      "command": "mcp-helm",
-      "args": ["--mode=stdio"]
+      "command": "mcp-helm"
     }
   }
 }
@@ -73,8 +72,7 @@ Edit MCP settings in Cursor's configuration:
 {
   "mcpServers": {
     "helm": {
-      "command": "mcp-helm",
-      "args": ["--mode=stdio"]
+      "command": "mcp-helm"
     }
   }
 }
@@ -91,8 +89,7 @@ Add to your Continue config (`~/.continue/config.json`):
       {
         "transport": {
           "type": "stdio",
-          "command": "mcp-helm",
-          "args": ["--mode=stdio"]
+          "command": "mcp-helm"
         }
       }
     ]
@@ -105,13 +102,13 @@ Add to your Continue config (`~/.continue/config.json`):
 Any MCP-compatible client can connect. For local use, **stdio is recommended** — it's faster and requires no port management:
 
 ```bash
-mcp-helm --mode=stdio
+mcp-helm
 ```
 
 For shared or remote setups, use HTTP:
 
 ```bash
-mcp-helm --mode=http --addr=:8012
+mcp-helm --transport=http --listen=:8012
 # Connect to http://localhost:8012/mcp
 ```
 
@@ -122,10 +119,13 @@ Once connected, your AI assistant can use these tools:
 | Tool | What it does |
 |------|--------------|
 | `list_repository_charts` | List all charts in a Helm repo (e.g., `https://charts.bitnami.com/bitnami`) |
+| `list_chart_versions` | List all versions of a chart with metadata |
 | `get_latest_version_of_chart` | Get the current version of a chart |
 | `get_chart_values` | Fetch the actual `values.yaml` for any chart version |
+| `get_values_schema` | Get the `values.schema.json` if the chart provides one |
 | `get_chart_contents` | Get full chart contents (templates, helpers, NOTES.txt) |
 | `get_chart_dependencies` | List chart dependencies from Chart.yaml |
+| `refresh_repository_index` | Force refresh the cached repository index |
 
 ## Installation
 
@@ -165,7 +165,7 @@ If you need a private instance or want lower latency:
 
 ```bash
 docker run -p 8012:8012 ghcr.io/kubedoll-heavy-industries/mcp-helm:latest \
-  --mode=http --addr=:8012
+  --transport=http --listen=:8012
 ```
 
 ### Fly.io
@@ -185,23 +185,59 @@ fly deploy
 |------|----------|----------------|
 | `stdio` | Local editor integration | **Use this for local setups** — faster, simpler, no ports to manage |
 | `http` | Shared server, multiple clients | Use for self-hosted/production deployments |
-| `sse` | Legacy MCP clients | Deprecated — use `http` for new setups |
 
 ### All CLI Flags
 
+**Transport:**
+
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--mode` | `stdio` | Transport mode: `stdio`, `http`, or `sse` |
-| `--addr` | `:8012` | Listen address for http/sse modes |
-| `--timeout` | `30s` | Timeout for Helm operations |
+| `--transport` | `stdio` | Transport mode: `stdio` or `http` |
+| `--listen` | `:8012` | Listen address for HTTP mode |
+
+**Helm:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--helm-timeout` | `30s` | Timeout for Helm operations |
+| `--cache-size` | `50` | Maximum number of charts to cache |
+| `--index-ttl` | `5m` | Repository index cache TTL |
+
+**Security:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
 | `--allow-private-ips` | `false` | Allow fetching from private/loopback IPs |
 | `--allowed-hosts` | | Hostname allowlist (comma-separated) |
 | `--denied-hosts` | | Hostname denylist (comma-separated) |
-| `--max-output` | `2097152` | Max tool output size in bytes |
+| `--trusted-proxies` | | CIDR ranges of trusted proxies for X-Forwarded-For |
+
+**Rate Limiting (HTTP mode):**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--rate-limit` | `false` | Enable rate limiting |
+| `--rate-limit-rps` | `10` | Requests per second per client |
+| `--rate-limit-burst` | `20` | Burst capacity |
+
+**Server:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--read-timeout` | `30s` | HTTP read timeout |
+| `--write-timeout` | `30s` | HTTP write timeout |
+| `--max-output-size` | `2097152` | Max tool output size in bytes |
+
+**Logging:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `--log-format` | `json` | Log format: `json` or `console` |
 
 ### Health Endpoints
 
-Available in `http` and `sse` modes:
+Available in `http` mode:
 
 - `GET /healthz` — Liveness probe
 - `GET /readyz` — Readiness probe
@@ -246,15 +282,14 @@ mise run inspector    # Opens MCP Inspector UI
 ### Project Structure
 
 ```
-├── cmd/mcp-helm/     # CLI entrypoint
+├── cmd/mcp-helm/       # CLI entrypoint
 ├── internal/
-│   ├── tools/        # MCP tool implementations
-│   └── resources/    # MCP resource implementations
-├── lib/
-│   ├── helm_client/  # Helm repository client
-│   ├── logger/       # Structured logging
-│   └── ratelimit/    # Rate limiting middleware
-└── docker/           # Container configurations
+│   ├── config/         # Configuration loading
+│   ├── helm/           # Helm client and domain types
+│   ├── server/         # HTTP server and middleware
+│   ├── handler/        # MCP tool handlers
+│   └── mcputil/        # MCP helper utilities
+└── docker/             # Container configurations
 ```
 
 ### Submitting Changes
