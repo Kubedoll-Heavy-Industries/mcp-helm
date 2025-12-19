@@ -130,10 +130,11 @@ func TestServerIntegration_ToolsList(t *testing.T) {
 	// Should have our defined tools
 	assert.Contains(t, toolNames, "list_repository_charts")
 	assert.Contains(t, toolNames, "list_chart_versions")
-	assert.Contains(t, toolNames, "get_latest_version_of_chart")
+	assert.Contains(t, toolNames, "get_chart_latest_version")
 	assert.Contains(t, toolNames, "get_chart_values")
-	assert.Contains(t, toolNames, "get_values_schema")
-	assert.Contains(t, toolNames, "get_chart_contents")
+	assert.Contains(t, toolNames, "get_chart_values_schema")
+	assert.Contains(t, toolNames, "list_chart_contents")
+	assert.Contains(t, toolNames, "get_chart_content")
 	assert.Contains(t, toolNames, "get_chart_dependencies")
 	assert.Contains(t, toolNames, "refresh_repository_index")
 }
@@ -156,6 +157,7 @@ func TestServerIntegration_CallTool_ListCharts(t *testing.T) {
 		Name: "list_repository_charts",
 		Arguments: map[string]any{
 			"repository_url": bitnamiRepo,
+			"search":         "nginx", // Use search to find specific chart
 		},
 	})
 	require.NoError(t, err)
@@ -168,7 +170,6 @@ func TestServerIntegration_CallTool_ListCharts(t *testing.T) {
 	require.True(t, ok, "expected TextContent")
 
 	assert.Contains(t, textContent.Text, "nginx")
-	assert.Contains(t, textContent.Text, "redis")
 }
 
 func TestServerIntegration_CallTool_GetLatestVersion(t *testing.T) {
@@ -186,7 +187,7 @@ func TestServerIntegration_CallTool_GetLatestVersion(t *testing.T) {
 	defer cancel()
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "get_latest_version_of_chart",
+		Name: "get_chart_latest_version",
 		Arguments: map[string]any{
 			"repository_url": bitnamiRepo,
 			"chart_name":     testChart,
