@@ -1,4 +1,4 @@
-name: Lint
+name: Build
 
 on:
   push:
@@ -7,13 +7,11 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - '.golangci.yml'
   pull_request:
     paths:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - '.golangci.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +21,7 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -43,5 +41,5 @@ jobs:
         with:
           install: true
 
-      - name: Run lint
-        run: mise run lint
+      - name: Run build
+        run: mise run build

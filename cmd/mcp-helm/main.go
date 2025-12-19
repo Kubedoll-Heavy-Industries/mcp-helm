@@ -1,89 +1,70 @@
+// Package main provides the entry point for the mcp-helm server.
 package main
 
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
-	"strings"
-	"time"
+	"os/signal"
+	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
-	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/tools"
-	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/helm_client"
-	"github.com/Kubedoll-Heavy-Industries/mcp-helm/lib/logger"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/config"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/handler"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/helm"
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/server"
 )
 
+// Build information, set by goreleaser.
 var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
 )
 
-type config struct {
-	mode               string
-	httpListenAddr     string
-	heartbeatInterval  time.Duration
-	sseKeepAlive       time.Duration
-	helmTimeout        time.Duration
-	allowPrivateIPs    bool
-	allowedHosts       string
-	deniedHosts        string
-	maxToolOutputBytes int
-}
-
-var cfg config
-
 func main() {
-	rootCmd := &cobra.Command{
-		Use:     "mcp-helm",
-		Short:   "MCP server for Helm repositories and charts",
-		Long:    "An MCP (Model Context Protocol) server that provides tools for interacting with Helm repositories and charts.",
-		Version: fmt.Sprintf("%s (commit: %s, date: %s)", version, commit, date),
-		Run:     run,
-	}
-
-	rootCmd.Flags().StringVarP(&cfg.mode, "mode", "m", "stdio", "Transport mode: stdio, http, or sse (deprecated)")
-	rootCmd.Flags().StringVarP(&cfg.httpListenAddr, "addr", "a", ":8012", "Listen address for http/sse modes")
-	rootCmd.Flags().DurationVar(&cfg.heartbeatInterval, "heartbeat", 30*time.Second, "Heartbeat interval for http mode")
-	rootCmd.Flags().DurationVar(&cfg.sseKeepAlive, "sse-keepalive", 30*time.Second, "Keep-alive interval for sse mode (deprecated)")
-	rootCmd.Flags().DurationVar(&cfg.helmTimeout, "timeout", 30*time.Second, "Timeout for Helm operations")
-	rootCmd.Flags().BoolVar(&cfg.allowPrivateIPs, "allow-private-ips", false, "Allow URLs resolving to private/loopback IPs")
-	rootCmd.Flags().StringVar(&cfg.allowedHosts, "allowed-hosts", "", "Comma-separated allowlist of hostnames")
-	rootCmd.Flags().StringVar(&cfg.deniedHosts, "denied-hosts", "", "Comma-separated denylist of hostnames")
-	rootCmd.Flags().IntVar(&cfg.maxToolOutputBytes, "max-output", 2*1024*1024, "Maximum tool output size in bytes")
-
-	if err := rootCmd.Execute(); err != nil {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	logger.Init()
-	defer logger.Stop()
-
-	switch cfg.mode {
-	case "stdio", "http", "sse":
-	default:
-		logger.Error("Invalid mode", zap.String("mode", cfg.mode), zap.String("valid", "stdio, http, sse"))
-		os.Exit(1)
+func run() error {
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
 	}
 
-	if (cfg.mode == "http" || cfg.mode == "sse") && cfg.httpListenAddr == "" {
-		logger.Error("Listen address required for http/sse mode")
-		os.Exit(1)
+	// Set build info
+	cfg.Version = version
+	cfg.Commit = commit
+	cfg.Date = date
+
+	// Create logger
+	logger, err := newLogger(cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		return fmt.Errorf("creating logger: %w", err)
 	}
+	defer func() { _ = logger.Sync() }()
 
-	if cfg.mode == "sse" {
-		logger.Warn("SSE transport is deprecated, consider using http (Streamable HTTP) instead")
-	}
+	// Create Helm client
+	helmClient := helm.NewClient(
+		helm.WithTimeout(cfg.HelmTimeout),
+		helm.WithIndexTTL(cfg.IndexTTL),
+		helm.WithCacheSize(cfg.CacheSize),
+		helm.WithMaxOutputBytes(cfg.MaxOutputBytes),
+		helm.WithAllowPrivateIPs(cfg.AllowPrivateIPs),
+		helm.WithAllowedHosts(cfg.AllowedHosts),
+		helm.WithDeniedHosts(cfg.DeniedHosts),
+		helm.WithLogger(logger),
+	)
 
-	ctx := context.Background()
-
-	s := mcp.NewServer(
+	// Create MCP server
+	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "Helm MCP Server",
 			Version: fmt.Sprintf("v%s (commit: %s, date: %s)", version, commit, date),
@@ -91,81 +72,42 @@ func run(cmd *cobra.Command, args []string) {
 		nil,
 	)
 
-	helmClient := helm_client.NewClientWithOptions(helm_client.Options{
-		Timeout:            cfg.helmTimeout,
-		AllowPrivateIPs:    cfg.allowPrivateIPs,
-		AllowedHosts:       splitCSVHosts(cfg.allowedHosts),
-		DeniedHosts:        splitCSVHosts(cfg.deniedHosts),
-		MaxToolOutputBytes: cfg.maxToolOutputBytes,
-	})
-	tools.Register(s, helmClient)
+	// Register handlers
+	h := handler.New(helmClient, logger)
+	h.Register(mcpServer)
 
-	logger.Info("Starting MCP Helm server",
-		zap.String("version", version),
-		zap.String("commit", commit),
-		zap.String("date", date),
-		zap.String("mode", cfg.mode),
-		zap.String("addr", cfg.httpListenAddr),
-	)
+	// Create and run server
+	srv := server.New(cfg, logger, mcpServer)
 
-	switch cfg.mode {
-	case "stdio":
-		if err := s.Run(ctx, &mcp.StdioTransport{}); err != nil {
-			logger.Error("Failed to start stdio transport", zap.Error(err))
-		}
-	case "http":
-		h := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{})
-		mux := http.NewServeMux()
-		mux.Handle("/mcp", h)
-		mux.Handle("/mcp/", h)
-		mux.HandleFunc("/healthz", healthzHandler)
-		mux.HandleFunc("/readyz", readyzHandler)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-		srv := &http.Server{Addr: cfg.httpListenAddr, Handler: mux}
-		if err := srv.ListenAndServe(); err != nil {
-			logger.Error("Failed to start HTTP server", zap.Error(err))
-		}
-	case "sse":
-		h := mcp.NewSSEHandler(func(_ *http.Request) *mcp.Server { return s }, &mcp.SSEOptions{})
-		mux := http.NewServeMux()
-		mux.Handle("/sse", h)
-		mux.Handle("/message", h)
-		mux.HandleFunc("/healthz", healthzHandler)
-		mux.HandleFunc("/readyz", readyzHandler)
-
-		srv := &http.Server{Addr: cfg.httpListenAddr, Handler: mux}
-		if err := srv.ListenAndServe(); err != nil {
-			logger.Error("Failed to start SSE server", zap.Error(err))
-		}
-	}
+	return srv.Run(ctx)
 }
 
-func healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `{"status":"ok","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
-}
+// newLogger creates a zap logger with the specified level and format.
+func newLogger(level, format string) (*zap.Logger, error) {
+	var lvl zapcore.Level
+	switch level {
+	case "debug":
+		lvl = zap.DebugLevel
+	case "info":
+		lvl = zap.InfoLevel
+	case "warn":
+		lvl = zap.WarnLevel
+	case "error":
+		lvl = zap.ErrorLevel
+	default:
+		lvl = zap.InfoLevel
+	}
 
-func readyzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `{"status":"ready","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
-}
+	var cfg zap.Config
+	if format == "console" {
+		cfg = zap.NewDevelopmentConfig()
+	} else {
+		cfg = zap.NewProductionConfig()
+	}
+	cfg.Level = zap.NewAtomicLevelAt(lvl)
 
-func splitCSVHosts(in string) []string {
-	trimmed := strings.TrimSpace(in)
-	if trimmed == "" {
-		return nil
-	}
-	parts := strings.Split(trimmed, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if pp := strings.TrimSpace(p); pp != "" {
-			out = append(out, pp)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return cfg.Build()
 }

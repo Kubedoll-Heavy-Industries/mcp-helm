@@ -18,7 +18,24 @@ depends = ["vet", "fmt"]
 run = "mise exec -- golangci-lint run --modules-download-mode readonly --timeout=10m"
 
 [tasks.test]
-run = "go test ./..."
+run = "go test -race ./..."
+description = "Run unit tests"
+
+[tasks."test:integration"]
+run = "go test -race -tags=integration ./internal/integration/..."
+description = "Run integration tests (requires network)"
+
+[tasks."test:e2e"]
+run = "go test -tags=e2e ./e2e/..."
+description = "Run end-to-end tests"
+
+[tasks."test:all"]
+depends = ["test", "test:integration", "test:e2e"]
+description = "Run all tests (unit, integration, e2e)"
+
+[tasks."test:cover"]
+run = "go test -race -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html"
+description = "Run tests with coverage report"
 
 [tasks.build]
 run = "go build -o tmp/mcp-helm ./cmd/mcp-helm"

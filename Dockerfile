@@ -40,7 +40,7 @@ EXPOSE 8012
 COPY --from=build /out/mcp-helm /mcp-helm
 
 ENTRYPOINT ["/mcp-helm"]
-CMD ["--addr=:8012", "--mode=http"]
+CMD ["--listen=:8012", "--transport=http"]
 
 FROM alpine:3.23.0 AS debug
 
@@ -51,4 +51,4 @@ EXPOSE 8012
 COPY --from=build /out/mcp-helm /mcp-helm
 
 ENTRYPOINT ["/mcp-helm"]
-CMD ["--addr=:8012", "--mode=http"]
+CMD ["--listen=:8012", "--transport=http"]

@@ -20,4 +20,4 @@ LABEL org.opencontainers.image.title="mcp-helm" \
 EXPOSE      8012
 USER        65532:65532
 ENTRYPOINT  [ "/mcp-helm" ]
-CMD         [ "--addr=:8012", "--mode=http" ]
+CMD         [ "--listen=:8012", "--transport=http" ]
