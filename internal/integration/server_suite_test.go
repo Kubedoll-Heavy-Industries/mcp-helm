@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,19 +19,22 @@ import (
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/helm"
 )
 
-// ServerSuite tests the MCP server with a shared Helm client.
-// The server and client are created once in SetupSuite.
+// ServerSuite tests the MCP server layer.
+// Tests verify MCP protocol contracts, not specific chart data.
 type ServerSuite struct {
 	suite.Suite
 	helmClient helm.ChartService
 	server     *httptest.Server
 	mcpServer  *mcp.Server
+
+	// Dynamic fixture
+	sampleRepo  string
+	sampleChart string
 }
 
 func (s *ServerSuite) SetupSuite() {
 	logger := zap.NewNop()
 
-	// Create shared Helm client with generous cache settings
 	s.helmClient = helm.NewClient(
 		helm.WithTimeout(60*time.Second),
 		helm.WithIndexTTL(10*time.Minute),
@@ -38,10 +42,8 @@ func (s *ServerSuite) SetupSuite() {
 		helm.WithLogger(logger),
 	)
 
-	// Create handler
 	h := handler.New(s.helmClient, logger)
 
-	// Create MCP server
 	s.mcpServer = mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "mcp-helm-test",
@@ -51,13 +53,11 @@ func (s *ServerSuite) SetupSuite() {
 	)
 	h.Register(s.mcpServer)
 
-	// Create MCP HTTP handler
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(_ *http.Request) *mcp.Server { return s.mcpServer },
 		&mcp.StreamableHTTPOptions{},
 	)
 
-	// Create HTTP mux
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpHandler)
 	mux.Handle("/mcp/", mcpHandler)
@@ -68,10 +68,23 @@ func (s *ServerSuite) SetupSuite() {
 
 	s.server = httptest.NewServer(mux)
 
-	// Warm the cache by fetching a version
+	// Discover a working fixture
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, _ = s.helmClient.GetLatestVersion(ctx, bitnamiRepo, "nginx")
+
+	repos := []string{prometheusRepo, grafanaRepo, ingressRepo}
+	for _, repo := range repos {
+		charts, err := s.helmClient.ListCharts(ctx, repo)
+		if err == nil && len(charts) > 0 {
+			s.sampleRepo = repo
+			s.sampleChart = charts[0]
+			break
+		}
+	}
+
+	if s.sampleRepo == "" {
+		s.T().Fatal("Could not discover working fixture")
+	}
 }
 
 func (s *ServerSuite) TearDownSuite() {
@@ -80,7 +93,6 @@ func (s *ServerSuite) TearDownSuite() {
 	}
 }
 
-// newSession creates a fresh MCP client session for the test
 func (s *ServerSuite) newSession() *mcp.ClientSession {
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "test-client",
@@ -100,12 +112,16 @@ func (s *ServerSuite) newSession() *mcp.ClientSession {
 	return session
 }
 
-// TestHealthEndpoint tests the health endpoint
-func (s *ServerSuite) TestHealthEndpoint() {
+// =============================================================================
+// HTTP Endpoint Tests
+// =============================================================================
+
+func (s *ServerSuite) TestHealthEndpoint_ReturnsOK() {
 	resp, err := http.Get(s.server.URL + "/health")
 	s.Require().NoError(err)
 	defer resp.Body.Close()
 
+	// Contract: Health endpoint returns 200 OK
 	s.Equal(http.StatusOK, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
@@ -113,8 +129,11 @@ func (s *ServerSuite) TestHealthEndpoint() {
 	s.Equal("ok", string(body))
 }
 
-// TestToolsList tests listing available tools
-func (s *ServerSuite) TestToolsList() {
+// =============================================================================
+// MCP Protocol Tests
+// =============================================================================
+
+func (s *ServerSuite) TestListTools_ReturnsExpectedTools() {
 	session := s.newSession()
 	defer session.Close()
 
@@ -124,26 +143,53 @@ func (s *ServerSuite) TestToolsList() {
 	result, err := session.ListTools(ctx, nil)
 	s.Require().NoError(err)
 
-	// Collect tool names
-	toolNames := make([]string, len(result.Tools))
-	for i, tool := range result.Tools {
-		toolNames[i] = tool.Name
+	// Contract: All registered tools should be present
+	expectedTools := []string{
+		"list_repository_charts",
+		"list_chart_versions",
+		"get_chart_latest_version",
+		"get_chart_values",
+		"get_chart_values_schema",
+		"list_chart_contents",
+		"get_chart_content",
+		"get_chart_dependencies",
+		"refresh_repository_index",
 	}
 
-	// Verify expected tools
-	s.Contains(toolNames, "list_repository_charts")
-	s.Contains(toolNames, "list_chart_versions")
-	s.Contains(toolNames, "get_chart_latest_version")
-	s.Contains(toolNames, "get_chart_values")
-	s.Contains(toolNames, "get_chart_values_schema")
-	s.Contains(toolNames, "list_chart_contents")
-	s.Contains(toolNames, "get_chart_content")
-	s.Contains(toolNames, "get_chart_dependencies")
-	s.Contains(toolNames, "refresh_repository_index")
+	toolNames := make(map[string]bool)
+	for _, tool := range result.Tools {
+		toolNames[tool.Name] = true
+
+		// Contract: Every tool must have a description
+		s.NotEmpty(tool.Description, "Tool %s should have description", tool.Name)
+	}
+
+	for _, expected := range expectedTools {
+		s.True(toolNames[expected], "Missing expected tool: %s", expected)
+	}
 }
 
-// TestCallTool_ListCharts tests calling list_repository_charts
-func (s *ServerSuite) TestCallTool_ListCharts() {
+func (s *ServerSuite) TestListTools_ToolsHaveInputSchemas() {
+	session := s.newSession()
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := session.ListTools(ctx, nil)
+	s.Require().NoError(err)
+
+	for _, tool := range result.Tools {
+		// Contract: Tools should have input schemas
+		s.NotNil(tool.InputSchema, "Tool %s should have InputSchema", tool.Name)
+	}
+}
+
+// =============================================================================
+// Tool Call Contract Tests
+// =============================================================================
+
+func (s *ServerSuite) TestCallTool_ListCharts_ReturnsStructuredResponse() {
 	session := s.newSession()
 	defer session.Close()
 
@@ -153,22 +199,35 @@ func (s *ServerSuite) TestCallTool_ListCharts() {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "list_repository_charts",
 		Arguments: map[string]any{
-			"repository_url": bitnamiRepo,
-			"search":         "nginx",
+			"repository_url": s.sampleRepo,
+			"limit":          10,
 		},
 	})
 	s.Require().NoError(err)
 
-	s.False(result.IsError)
-	s.Require().NotEmpty(result.Content)
+	// Contract: Successful call should not be an error
+	s.False(result.IsError, "Valid call should succeed")
+	s.Require().NotEmpty(result.Content, "Response should have content")
 
+	// Contract: Content should be parseable
 	textContent, ok := result.Content[0].(*mcp.TextContent)
-	s.Require().True(ok, "expected TextContent")
-	s.Contains(textContent.Text, "nginx")
+	s.Require().True(ok, "Content should be TextContent")
+	s.NotEmpty(textContent.Text, "Text content should not be empty")
+
+	// Contract: Response should be valid JSON with expected structure
+	var response struct {
+		Charts []string `json:"charts"`
+		Total  int      `json:"total"`
+		Limit  int      `json:"limit"`
+		Offset int      `json:"offset"`
+	}
+	err = json.Unmarshal([]byte(textContent.Text), &response)
+	s.Require().NoError(err, "Response should be valid JSON")
+	s.NotEmpty(response.Charts, "Should return charts")
+	s.LessOrEqual(len(response.Charts), 10, "Should respect limit")
 }
 
-// TestCallTool_GetLatestVersion tests calling get_chart_latest_version
-func (s *ServerSuite) TestCallTool_GetLatestVersion() {
+func (s *ServerSuite) TestCallTool_GetLatestVersion_ReturnsVersionString() {
 	session := s.newSession()
 	defer session.Close()
 
@@ -178,42 +237,29 @@ func (s *ServerSuite) TestCallTool_GetLatestVersion() {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "get_chart_latest_version",
 		Arguments: map[string]any{
-			"repository_url": bitnamiRepo,
-			"chart_name":     "nginx",
+			"repository_url": s.sampleRepo,
+			"chart_name":     s.sampleChart,
 		},
 	})
 	s.Require().NoError(err)
 
-	s.False(result.IsError)
+	s.False(result.IsError, "Valid call should succeed")
 	s.Require().NotEmpty(result.Content)
 
 	textContent, ok := result.Content[0].(*mcp.TextContent)
-	s.Require().True(ok, "expected TextContent")
-	s.Regexp(`\d+\.\d+\.\d+`, textContent.Text)
-}
+	s.Require().True(ok)
 
-// TestCallTool_ValidationError tests error handling for invalid input
-func (s *ServerSuite) TestCallTool_ValidationError() {
-	session := s.newSession()
-	defer session.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "list_repository_charts",
-		Arguments: map[string]any{
-			"repository_url": "",
-		},
-	})
+	// Contract: Response should contain a version field
+	var response struct {
+		Version string `json:"version"`
+	}
+	err = json.Unmarshal([]byte(textContent.Text), &response)
 	s.Require().NoError(err)
-
-	// Tool call succeeds at RPC level but returns error in content
-	s.True(result.IsError)
+	s.NotEmpty(response.Version, "Should return version string")
+	s.Regexp(`^\d+\.\d+`, response.Version, "Version should be semver-like")
 }
 
-// TestCallTool_ChartNotFound tests error handling for missing chart
-func (s *ServerSuite) TestCallTool_ChartNotFound() {
+func (s *ServerSuite) TestCallTool_ListVersions_ReturnsPaginatedVersions() {
 	session := s.newSession()
 	defer session.Close()
 
@@ -223,17 +269,123 @@ func (s *ServerSuite) TestCallTool_ChartNotFound() {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "list_chart_versions",
 		Arguments: map[string]any{
-			"repository_url": bitnamiRepo,
-			"chart_name":     "this-chart-does-not-exist-xyz",
+			"repository_url": s.sampleRepo,
+			"chart_name":     s.sampleChart,
+			"limit":          5,
 		},
 	})
 	s.Require().NoError(err)
+	s.False(result.IsError)
 
-	s.True(result.IsError)
+	textContent := result.Content[0].(*mcp.TextContent)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	s.Require().True(ok, "expected TextContent")
-	s.Contains(textContent.Text, "not found")
+	// Contract: Response should have pagination fields
+	var response struct {
+		Versions []struct {
+			Version    string `json:"version"`
+			AppVersion string `json:"app_version"`
+		} `json:"versions"`
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+	err = json.Unmarshal([]byte(textContent.Text), &response)
+	s.Require().NoError(err)
+
+	s.NotEmpty(response.Versions, "Should return versions")
+	s.LessOrEqual(len(response.Versions), 5, "Should respect limit")
+	s.GreaterOrEqual(response.Total, len(response.Versions), "Total should be >= returned count")
+}
+
+// =============================================================================
+// Error Handling Contract Tests
+// =============================================================================
+
+func (s *ServerSuite) TestCallTool_MissingRequiredField_ReturnsError() {
+	session := s.newSession()
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "list_repository_charts",
+		Arguments: map[string]any{
+			"repository_url": "", // Empty required field
+		},
+	})
+
+	// Contract: RPC should succeed, but tool returns error
+	s.Require().NoError(err, "RPC should succeed even for validation errors")
+	s.True(result.IsError, "Empty required field should return error")
+
+	textContent := result.Content[0].(*mcp.TextContent)
+	s.Contains(textContent.Text, "required", "Error should mention 'required'")
+}
+
+func (s *ServerSuite) TestCallTool_ChartNotFound_ReturnsErrorWithMessage() {
+	session := s.newSession()
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "list_chart_versions",
+		Arguments: map[string]any{
+			"repository_url": s.sampleRepo,
+			"chart_name":     "this-chart-does-not-exist-xyz123",
+		},
+	})
+
+	s.Require().NoError(err, "RPC should succeed")
+	s.True(result.IsError, "Non-existent chart should return error")
+
+	textContent := result.Content[0].(*mcp.TextContent)
+	s.Contains(textContent.Text, "not found", "Error should indicate chart not found")
+}
+
+func (s *ServerSuite) TestCallTool_InvalidPagination_ReturnsError() {
+	session := s.newSession()
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "list_repository_charts",
+		Arguments: map[string]any{
+			"repository_url": s.sampleRepo,
+			"limit":          -1, // Invalid
+		},
+	})
+
+	s.Require().NoError(err)
+	s.True(result.IsError, "Negative limit should return error")
+}
+
+// =============================================================================
+// Session Management Tests
+// =============================================================================
+
+func (s *ServerSuite) TestMultipleSessions_Independent() {
+	session1 := s.newSession()
+	session2 := s.newSession()
+	defer session1.Close()
+	defer session2.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Both sessions should work independently
+	result1, err := session1.ListTools(ctx, nil)
+	s.Require().NoError(err)
+
+	result2, err := session2.ListTools(ctx, nil)
+	s.Require().NoError(err)
+
+	// Contract: Both should return same tools
+	s.Equal(len(result1.Tools), len(result2.Tools))
 }
 
 func TestServerSuite(t *testing.T) {
