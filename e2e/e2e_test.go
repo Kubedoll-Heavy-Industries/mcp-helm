@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -231,7 +230,7 @@ func TestE2E_StdioMode_ListTools(t *testing.T) {
 
 	assert.Contains(t, toolNames, "list_repository_charts")
 	assert.Contains(t, toolNames, "list_chart_versions")
-	assert.Contains(t, toolNames, "get_latest_version_of_chart")
+	assert.Contains(t, toolNames, "get_chart_latest_version")
 }
 
 func TestE2E_HTTPMode_Health(t *testing.T) {
@@ -366,7 +365,7 @@ func TestE2E_StdioMode_CallTool_ListCharts(t *testing.T) {
 	stdin.Write(data)
 	stdin.Write([]byte("\n"))
 
-	// Call list_repository_charts tool
+	// Call list_repository_charts tool with search filter
 	callReq := jsonRPCRequest{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -375,6 +374,7 @@ func TestE2E_StdioMode_CallTool_ListCharts(t *testing.T) {
 			"name": "list_repository_charts",
 			"arguments": map[string]interface{}{
 				"repository_url": bitnamiURL,
+				"search":         "nginx",
 			},
 		},
 	}
@@ -399,13 +399,11 @@ func TestE2E_StdioMode_CallTool_ListCharts(t *testing.T) {
 
 	assert.False(t, result.IsError)
 
-	// Check that we have charts either in text content or structured content
+	// Check that we have nginx in text content or structured content
 	if len(result.StructuredContent.Charts) > 0 {
 		assert.Contains(t, result.StructuredContent.Charts, "nginx")
-		assert.Contains(t, result.StructuredContent.Charts, "redis")
 	} else if len(result.Content) > 0 {
 		text := result.Content[0].Text
-		assert.True(t, strings.Contains(text, "nginx") || strings.Contains(text, "redis"),
-			"expected charts to be listed")
+		assert.Contains(t, text, "nginx")
 	}
 }
