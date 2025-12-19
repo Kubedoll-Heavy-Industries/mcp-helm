@@ -1,59 +1,29 @@
-name: CI
+name: Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - '.golangci.yml'
-      - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - '.golangci.yml'
-      - '.github/workflows/ci.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-          cache: true
-
-      - name: Install mise
-        uses: jdx/mise-action@v3
-        with:
-          install: true
-
-      - name: Run lint
-        run: mise run lint
-
-  test-unit:
+  unit:
     name: unit tests
-    needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -72,15 +42,12 @@ jobs:
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  test-integration:
+  integration:
     name: integration tests
-    needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -91,15 +58,12 @@ jobs:
       - name: Run integration tests
         run: go test -race -tags=integration ./internal/integration/...
 
-  test-e2e:
+  e2e:
     name: e2e tests
-    needs: [test-unit]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -109,27 +73,3 @@ jobs:
 
       - name: Run E2E tests
         run: go test -tags=e2e ./e2e/...
-
-  build:
-    name: build
-    needs: [test-unit, test-integration, test-e2e]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-          cache: true
-
-      - name: Install mise
-        uses: jdx/mise-action@v3
-        with:
-          install: true
-
-      - name: Run build
-        run: mise run build

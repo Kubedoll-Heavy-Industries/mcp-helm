@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 )
 

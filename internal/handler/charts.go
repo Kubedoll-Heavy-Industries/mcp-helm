@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/goccy/go-yaml"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"gopkg.in/yaml.v3"
 
 	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/mcputil"
 )
@@ -399,78 +399,35 @@ func (h *Handler) getChartDependencies() mcp.ToolHandlerFor[getChartDependencies
 // extractYAMLPath extracts a value at the given yq-style path from YAML data.
 // Supports paths like ".foo.bar" or ".foo.bar[0]"
 func extractYAMLPath(data []byte, path string) (string, error) {
-	// Parse the YAML
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return "", fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	if root.Kind == 0 {
-		return "", fmt.Errorf("empty YAML document")
-	}
-
-	// Navigate to the path
-	node := &root
-	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
-		node = root.Content[0]
-	}
-
-	// Parse path components (simplified yq-style: .foo.bar)
+	// Handle empty path - return whole document
 	path = strings.TrimPrefix(path, ".")
 	if path == "" {
-		// Return the whole document
-		out, err := yaml.Marshal(node)
-		return string(out), err
+		var v interface{}
+		if err := yaml.Unmarshal(data, &v); err != nil {
+			return "", fmt.Errorf("failed to parse YAML: %w", err)
+		}
+		out, err := yaml.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal result: %w", err)
+		}
+		return strings.TrimSpace(string(out)), nil
 	}
 
-	parts := strings.Split(path, ".")
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
+	// Convert yq-style path (.foo.bar[0]) to YAMLPath syntax ($.foo.bar[0])
+	yamlPath := "$." + path
 
-		// Handle array index like "items[0]"
-		arrayIndex := -1
-		if idx := strings.Index(part, "["); idx != -1 {
-			end := strings.Index(part, "]")
-			if end > idx {
-				_, _ = fmt.Sscanf(part[idx+1:end], "%d", &arrayIndex)
-				part = part[:idx]
-			}
-		}
+	yp, err := yaml.PathString(yamlPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid path %q: %w", path, err)
+	}
 
-		if node.Kind != yaml.MappingNode {
-			return "", fmt.Errorf("cannot navigate into non-mapping node at %q", part)
-		}
-
-		// Find the key in the mapping
-		found := false
-		for i := 0; i < len(node.Content); i += 2 {
-			if node.Content[i].Value == part {
-				node = node.Content[i+1]
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return "", fmt.Errorf("path not found: %q", part)
-		}
-
-		// Handle array indexing
-		if arrayIndex >= 0 {
-			if node.Kind != yaml.SequenceNode {
-				return "", fmt.Errorf("cannot index non-sequence node at %q", part)
-			}
-			if arrayIndex >= len(node.Content) {
-				return "", fmt.Errorf("index %d out of range for %q (len=%d)", arrayIndex, part, len(node.Content))
-			}
-			node = node.Content[arrayIndex]
-		}
+	var result interface{}
+	if err := yp.Read(strings.NewReader(string(data)), &result); err != nil {
+		return "", fmt.Errorf("path not found: %q", path)
 	}
 
 	// Marshal the result back to YAML
-	out, err := yaml.Marshal(node)
+	out, err := yaml.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
