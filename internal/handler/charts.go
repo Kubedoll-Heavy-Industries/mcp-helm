@@ -15,7 +15,6 @@ import (
 // Default pagination limits
 const (
 	defaultChartListLimit = 50
-	defaultValuesMaxLines = 200
 )
 
 // Input/output types for chart tools
@@ -39,13 +38,11 @@ type getChartValuesInput struct {
 	ChartName     string `json:"chart_name" jsonschema:"Chart name"`
 	ChartVersion  string `json:"chart_version,omitempty" jsonschema:"Chart version (latest if omitted)"`
 	Path          string `json:"path,omitempty" jsonschema:"YAML path to extract (e.g., '.prometheus.server' or '.ingress.enabled'). Returns full file if omitted."`
-	MaxLines      int    `json:"max_lines,omitempty" jsonschema:"Maximum lines to return (default 200, 0 = unlimited)"`
 }
 
 type getChartValuesOutput struct {
-	Values    string `json:"values" jsonschema:"Values content (YAML)"`
-	Truncated bool   `json:"truncated" jsonschema:"Whether output was truncated"`
-	Path      string `json:"path,omitempty" jsonschema:"Path that was extracted, if any"`
+	Values string `json:"values" jsonschema:"Values content (YAML)"`
+	Path   string `json:"path,omitempty" jsonschema:"Path that was extracted, if any"`
 }
 
 type getValuesSchemaInput struct {
@@ -193,36 +190,20 @@ func (h *Handler) getChartValues() mcp.ToolHandlerFor[getChartValuesInput, getCh
 			return mcputil.HandleError(err), getChartValuesOutput{}, nil
 		}
 
-		var result string
-		var extractedPath string
-
 		// If path is specified, extract that portion using yq-style path
 		if path != "" {
 			extracted, err := extractYAMLPath(valuesBytes, path)
 			if err != nil {
 				return mcputil.TextError(fmt.Sprintf("invalid path %q: %v", path, err)), getChartValuesOutput{}, nil
 			}
-			result = extracted
-			extractedPath = path
-		} else {
-			result = string(valuesBytes)
-		}
-
-		// Apply max_lines truncation
-		maxLines := in.MaxLines
-		if maxLines == 0 {
-			maxLines = defaultValuesMaxLines
-		}
-
-		truncated := false
-		if maxLines > 0 {
-			result, truncated = truncateLines(result, maxLines)
+			return nil, getChartValuesOutput{
+				Values: extracted,
+				Path:   path,
+			}, nil
 		}
 
 		return nil, getChartValuesOutput{
-			Values:    result,
-			Truncated: truncated,
-			Path:      extractedPath,
+			Values: string(valuesBytes),
 		}, nil
 	}
 }
@@ -433,16 +414,4 @@ func extractYAMLPath(data []byte, path string) (string, error) {
 	}
 
 	return strings.TrimSpace(string(out)), nil
-}
-
-// truncateLines truncates content to maxLines and returns whether truncation occurred.
-func truncateLines(content string, maxLines int) (string, bool) {
-	lines := strings.Split(content, "\n")
-	if len(lines) <= maxLines {
-		return content, false
-	}
-
-	truncated := strings.Join(lines[:maxLines], "\n")
-	truncated += fmt.Sprintf("\n\n... truncated (%d more lines)", len(lines)-maxLines)
-	return truncated, true
 }

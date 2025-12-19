@@ -534,31 +534,6 @@ client:
 		assert.Contains(t, output.Values, "host: localhost")
 	})
 
-	t.Run("with max_lines truncation", func(t *testing.T) {
-		// Create content with many lines
-		lines := ""
-		for i := 0; i < 300; i++ {
-			lines += "line" + string(rune('0'+i%10)) + ": value\n"
-		}
-		mockSvc := new(mocks.ChartService)
-		mockSvc.On("GetValues", ctx, "https://repo.com", "nginx", "1.0.0").
-			Return([]byte(lines), nil)
-
-		h := New(mockSvc, zap.NewNop())
-		handler := h.getChartValues()
-
-		result, output, err := handler(ctx, nil, getChartValuesInput{
-			RepositoryURL: "https://repo.com",
-			ChartName:     "nginx",
-			ChartVersion:  "1.0.0",
-			MaxLines:      50,
-		})
-
-		assert.NoError(t, err)
-		assert.Nil(t, result)
-		assert.True(t, output.Truncated)
-		assert.Contains(t, output.Values, "... truncated")
-	})
 }
 
 func TestGetChartValuesSchema(t *testing.T) {
