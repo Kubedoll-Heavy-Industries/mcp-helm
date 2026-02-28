@@ -42,7 +42,7 @@ COPY --from=build /out/mcp-helm /mcp-helm
 ENTRYPOINT ["/mcp-helm"]
 CMD ["--listen=:8012", "--transport=http"]
 
-FROM alpine:3.23.0 AS debug
+FROM alpine:3.23.3 AS debug
 
 RUN apk add --no-cache ca-certificates tzdata curl
 
