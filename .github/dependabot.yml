@@ -1,0 +1,81 @@
+# Dependabot configuration
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+
+updates:
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(deps):"
+    labels:
+      - "dependencies"
+      - "go"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(ci):"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # npm (e2e tests)
+  - package-ecosystem: "npm"
+    directory: "/e2e-ts"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(deps):"
+    labels:
+      - "dependencies"
+      - "npm"
+
+  # Docker - root Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(docker):"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Docker - goreleaser Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(docker):"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Docker - devcontainer Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(docker):"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Devcontainer features
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "fix(devcontainer):"
+    labels:
+      - "dependencies"
+      - "devcontainer"

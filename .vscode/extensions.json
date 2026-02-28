@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "golang.go",
+    "ms-azuretools.vscode-docker",
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "EditorConfig.EditorConfig",
+    "esbenp.prettier-vscode",
+    "streetsidesoftware.code-spell-checker",
+    "eamodio.gitlens",
+    "davidanson.vscode-markdownlint"
+  ]
+}

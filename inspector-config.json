@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-helm": {
+      "type": "streamable-http",
+      "url": "http://localhost:8012/mcp"
+    }
+  }
+}

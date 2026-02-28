@@ -1,0 +1,131 @@
+// Package server provides HTTP server infrastructure for mcp-helm.
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
+
+	"github.com/Kubedoll-Heavy-Industries/mcp-helm/internal/config"
+)
+
+// Server wraps the MCP server with HTTP transport and lifecycle management.
+type Server struct {
+	cfg       *config.Config
+	logger    *zap.Logger
+	mcpServer *mcp.Server
+}
+
+// New creates a new Server.
+func New(cfg *config.Config, logger *zap.Logger, mcpServer *mcp.Server) *Server {
+	return &Server{
+		cfg:       cfg,
+		logger:    logger,
+		mcpServer: mcpServer,
+	}
+}
+
+// Run starts the server and blocks until the context is cancelled.
+// It handles graceful shutdown automatically.
+func (s *Server) Run(ctx context.Context) error {
+	switch s.cfg.Transport {
+	case "stdio":
+		return s.runStdio(ctx)
+	case "http":
+		return s.runHTTP(ctx)
+	default:
+		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
+	}
+}
+
+// runStdio runs the MCP server over stdio.
+func (s *Server) runStdio(ctx context.Context) error {
+	s.logger.Info("starting MCP server",
+		zap.String("transport", "stdio"),
+		zap.String("version", s.cfg.Version),
+	)
+
+	return s.mcpServer.Run(ctx, &mcp.StdioTransport{})
+}
+
+// runHTTP runs the MCP server over HTTP with Streamable HTTP transport.
+func (s *Server) runHTTP(ctx context.Context) error {
+	// Create MCP HTTP handler
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(_ *http.Request) *mcp.Server { return s.mcpServer },
+		&mcp.StreamableHTTPOptions{},
+	)
+
+	// Build router
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", mcpHandler)
+	mux.Handle("/mcp/", mcpHandler)
+	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/readyz", s.handleReadyz)
+
+	// Apply middleware
+	var handler http.Handler = mux
+	handler = RecoveryMiddleware(s.logger)(handler)
+	handler = LoggingMiddleware(s.logger)(handler)
+
+	// Create HTTP server with timeouts
+	srv := &http.Server{
+		Addr:              s.cfg.Listen,
+		Handler:           handler,
+		ReadTimeout:       s.cfg.ReadTimeout,
+		WriteTimeout:      s.cfg.WriteTimeout,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	// Start server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		s.logger.Info("starting MCP server",
+			zap.String("transport", "http"),
+			zap.String("addr", s.cfg.Listen),
+			zap.String("version", s.cfg.Version),
+		)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	// Wait for shutdown signal or error
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("server error: %w", err)
+	case <-ctx.Done():
+		s.logger.Info("shutting down server")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown error: %w", err)
+		}
+
+		s.logger.Info("server stopped gracefully")
+		return nil
+	}
+}
+
+// handleHealthz handles liveness probe requests.
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"status":"ok","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+}
+
+// handleReadyz handles readiness probe requests.
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"status":"ready","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+}
