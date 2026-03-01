@@ -1,4 +1,4 @@
-import { Container } from "cloudflare:workers";
+import { Container, getContainer } from "@cloudflare/containers";
 
 interface Env {
   MCP_HELM: DurableObjectNamespace<McpHelmContainer>;
@@ -11,8 +11,7 @@ export class McpHelmContainer extends Container {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const id = env.MCP_HELM.idFromName("default");
-    const stub = env.MCP_HELM.get(id);
-    return stub.fetch(request);
+    const container = await getContainer(env.MCP_HELM, "mcp-helm");
+    return container.fetch(request);
   },
 };
