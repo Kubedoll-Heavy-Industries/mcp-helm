@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   govulncheck:
@@ -37,9 +38,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
       - name: Run Trivy vulnerability scanner (filesystem)
         uses: aquasecurity/trivy-action@0.34.1
         with:
+          skip-setup-trivy: 'true'
           scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
@@ -60,9 +70,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
       - name: Run Trivy configuration scanner
         uses: aquasecurity/trivy-action@0.34.1
         with:
+          skip-setup-trivy: 'true'
           scan-type: 'config'
           scan-ref: '.'
           exit-code: '0'  # Don't fail the build, just report

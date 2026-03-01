@@ -17,3 +17,5 @@ node_modules
 
 *.log
 build-errors.log
+
+cloudflare/

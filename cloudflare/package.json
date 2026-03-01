@@ -1,0 +1,7 @@
+{
+  "name": "mcp-helm-cloudflare",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250620.0"
+  }
+}
