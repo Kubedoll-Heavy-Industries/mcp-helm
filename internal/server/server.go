@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -69,7 +70,7 @@ func (s *Server) runHTTP(ctx context.Context) error {
 	mux.HandleFunc("/readyz", s.handleReadyz)
 
 	// Apply middleware
-	var handler http.Handler = mux
+	var handler http.Handler = &jsonNotFoundMux{mux: mux}
 	handler = RecoveryMiddleware(s.logger)(handler)
 	handler = LoggingMiddleware(s.logger)(handler)
 
@@ -114,6 +115,27 @@ func (s *Server) runHTTP(ctx context.Context) error {
 		s.logger.Info("server stopped gracefully")
 		return nil
 	}
+}
+
+// jsonNotFoundMux wraps an http.ServeMux so that unmatched routes return a JSON
+// 404 instead of the default plain-text "404 page not found". This is necessary
+// because MCP clients (e.g. Claude Code) probe /.well-known/oauth-authorization-server
+// and expect a JSON response even on 404.
+type jsonNotFoundMux struct {
+	mux *http.ServeMux
+}
+
+func (m *jsonNotFoundMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check if the mux has a handler for this path.
+	_, pattern := m.mux.Handler(r)
+	if pattern == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		pathJSON, _ := json.Marshal(r.URL.Path)
+		_, _ = fmt.Fprintf(w, `{"error":"not_found","error_description":"no route for %s"}`, string(pathJSON))
+		return
+	}
+	m.mux.ServeHTTP(w, r)
 }
 
 // handleHealthz handles liveness probe requests.

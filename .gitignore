@@ -46,3 +46,4 @@ docs/llms/work/*
 node_modules/
 
 .wrangler/
+.mcp.json
