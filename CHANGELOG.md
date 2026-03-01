@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/Kubedoll-Heavy-Industries/helm-mcp/compare/v0.1.1...v0.1.2) (2026-03-01)
+
+
+### Bug Fixes
+
+* **deploy:** fix Container import and update cloudflare deps ([#9](https://github.com/Kubedoll-Heavy-Industries/helm-mcp/issues/9)) ([9bb9590](https://github.com/Kubedoll-Heavy-Industries/helm-mcp/commit/9bb95901443ef3dac7da5c7f573b87636919fd31))
+
 ## [0.1.1](https://github.com/Kubedoll-Heavy-Industries/mcp-helm/compare/v0.1.0...v0.1.1) (2026-02-28)
 
 
