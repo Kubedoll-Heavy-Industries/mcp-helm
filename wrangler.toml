@@ -1,5 +1,5 @@
 name = "mcp-helm"
-main = "src/index.ts"
+main = "cloudflare/src/index.ts"
 compatibility_date = "2025-06-01"
 
 [[routes]]
@@ -8,7 +8,7 @@ custom_domain = true
 
 [[containers]]
 class_name = "McpHelmContainer"
-image = "../Dockerfile"
+image = "Dockerfile"
 max_instances = 10
 instance_type = "basic"
 
