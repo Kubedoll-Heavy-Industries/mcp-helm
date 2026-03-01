@@ -2,6 +2,10 @@ name = "mcp-helm"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
 
+[[routes]]
+pattern = "helm-mcp.kubedoll.com"
+custom_domain = true
+
 [[containers]]
 class_name = "McpHelmContainer"
 image = "../Dockerfile"
