@@ -42,6 +42,7 @@ dist
 docs/llms/work/*
 !docs/llms/work/README.md
 
-# TypeScript e2e tests
-e2e-ts/node_modules/
+# Node.js dependencies
+node_modules/
 
+.wrangler/
