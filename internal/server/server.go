@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -61,15 +62,20 @@ func (s *Server) runHTTP(ctx context.Context) error {
 		&mcp.StreamableHTTPOptions{},
 	)
 
+	// Wrap MCP handler to convert 202 empty responses to 200 with body.
+	// Cloudflare Containers proxy cannot handle 202 with empty body, causing
+	// internal errors that break MCP session establishment.
+	wrappedMCP := &rewrite202Handler{next: mcpHandler}
+
 	// Build router
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
-	mux.Handle("/mcp/", mcpHandler)
+	mux.Handle("/mcp", wrappedMCP)
+	mux.Handle("/mcp/", wrappedMCP)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/readyz", s.handleReadyz)
 
 	// Apply middleware
-	var handler http.Handler = mux
+	var handler http.Handler = &jsonNotFoundMux{mux: mux}
 	handler = RecoveryMiddleware(s.logger)(handler)
 	handler = LoggingMiddleware(s.logger)(handler)
 
@@ -114,6 +120,75 @@ func (s *Server) runHTTP(ctx context.Context) error {
 		s.logger.Info("server stopped gracefully")
 		return nil
 	}
+}
+
+// rewrite202Handler wraps an http.Handler so that 202 Accepted responses (used
+// by the MCP SDK for JSON-RPC notifications) get a minimal JSON body. Cloudflare
+// Containers' internal proxy throws "internal error" when it receives a 202 with
+// an empty body, breaking the MCP session handshake.
+type rewrite202Handler struct {
+	next http.Handler
+}
+
+func (h *rewrite202Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rec := &statusRecorder{ResponseWriter: w}
+	h.next.ServeHTTP(rec, r)
+	if rec.status == http.StatusAccepted && !rec.wroteBody {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}
+}
+
+// statusRecorder captures the status code and whether a body was written,
+// forwarding everything else to the underlying ResponseWriter.
+type statusRecorder struct {
+	http.ResponseWriter
+	status    int
+	wroteBody bool
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	if code != http.StatusAccepted {
+		r.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	r.wroteBody = true
+	if r.status == http.StatusAccepted {
+		// Buffer — don't forward the write for 202, let the wrapper handle it.
+		return len(b), nil
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// jsonNotFoundMux wraps an http.ServeMux so that unmatched routes return a JSON
+// 404 instead of the default plain-text "404 page not found". This is necessary
+// because MCP clients (e.g. Claude Code) probe /.well-known/oauth-authorization-server
+// and expect a JSON response even on 404.
+type jsonNotFoundMux struct {
+	mux *http.ServeMux
+}
+
+func (m *jsonNotFoundMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check if the mux has a handler for this path.
+	_, pattern := m.mux.Handler(r)
+	if pattern == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		pathJSON, _ := json.Marshal(r.URL.Path)
+		_, _ = fmt.Fprintf(w, `{"error":"not_found","error_description":"no route for %s"}`, string(pathJSON))
+		return
+	}
+	m.mux.ServeHTTP(w, r)
 }
 
 // handleHealthz handles liveness probe requests.
