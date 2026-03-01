@@ -1,0 +1,17 @@
+name = "mcp-helm"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+[[containers]]
+class_name = "McpHelmContainer"
+image = "../Dockerfile"
+max_instances = 10
+instance_type = "basic"
+
+[[durable_objects.bindings]]
+name = "MCP_HELM"
+class_name = "McpHelmContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["McpHelmContainer"]

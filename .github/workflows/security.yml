@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   govulncheck:
@@ -37,6 +38,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.5
+
       - name: Run Trivy vulnerability scanner (filesystem)
         uses: aquasecurity/trivy-action@0.34.1
         with:
@@ -46,6 +50,7 @@ jobs:
           exit-code: '0'  # Don't fail the build, just report
           format: 'sarif'
           output: 'trivy-results.sarif'
+          skip-setup-trivy: 'true'
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -60,6 +65,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.5
+
       - name: Run Trivy configuration scanner
         uses: aquasecurity/trivy-action@0.34.1
         with:
@@ -68,6 +76,7 @@ jobs:
           exit-code: '0'  # Don't fail the build, just report
           format: 'sarif'
           output: 'trivy-config-results.sarif'
+          skip-setup-trivy: 'true'
 
       - name: Upload Trivy config results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
