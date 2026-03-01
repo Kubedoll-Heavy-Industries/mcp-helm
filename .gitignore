@@ -45,3 +45,4 @@ docs/llms/work/*
 # Node.js dependencies
 node_modules/
 
+.wrangler/
